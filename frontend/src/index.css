@@ -1,0 +1,205 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap');
+
+@layer base {
+  :root {
+    /* Dark base with electric accents */
+    --background: 222 47% 6%;
+    --foreground: 210 40% 96%;
+
+    --card: 222 47% 9%;
+    --card-foreground: 210 40% 96%;
+
+    --popover: 222 47% 8%;
+    --popover-foreground: 210 40% 96%;
+
+    /* Electric cyan primary */
+    --primary: 177 100% 50%;
+    --primary-foreground: 222 47% 6%;
+    --primary-glow: 177 100% 60%;
+
+    /* Deep purple secondary */
+    --secondary: 270 60% 50%;
+    --secondary-foreground: 210 40% 98%;
+
+    /* Muted dark tones */
+    --muted: 222 40% 14%;
+    --muted-foreground: 215 20% 55%;
+
+    /* Coral accent for notifications */
+    --accent: 16 100% 60%;
+    --accent-foreground: 222 47% 6%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    /* Persona colors */
+    --persona-mystic: 280 80% 60%;
+    --persona-warrior: 350 85% 55%;
+    --persona-sage: 145 70% 45%;
+    --persona-trickster: 45 100% 55%;
+
+    --border: 222 30% 18%;
+    --input: 222 30% 15%;
+    --ring: 177 100% 50%;
+
+    --radius: 0.75rem;
+
+    /* Scene active glow */
+    --scene-glow: 177 100% 50%;
+    --scene-active: 145 80% 50%;
+    --scene-inactive: 222 30% 30%;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(177 100% 50%), hsl(200 100% 50%));
+    --gradient-persona: linear-gradient(135deg, hsl(280 80% 60%), hsl(320 80% 50%));
+    --gradient-scene: linear-gradient(180deg, hsl(222 47% 12%), hsl(222 47% 6%));
+    --gradient-card: linear-gradient(145deg, hsl(222 47% 12%), hsl(222 47% 8%));
+    
+    /* Shadows */
+    --shadow-glow: 0 0 30px hsl(177 100% 50% / 0.3);
+    --shadow-persona: 0 0 40px hsl(280 80% 60% / 0.4);
+    --shadow-card: 0 8px 32px hsl(0 0% 0% / 0.4);
+
+    --sidebar-background: 222 47% 8%;
+    --sidebar-foreground: 210 40% 96%;
+    --sidebar-primary: 177 100% 50%;
+    --sidebar-primary-foreground: 222 47% 6%;
+    --sidebar-accent: 222 40% 14%;
+    --sidebar-accent-foreground: 210 40% 96%;
+    --sidebar-border: 222 30% 18%;
+    --sidebar-ring: 177 100% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-outfit antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-outfit font-bold tracking-tight;
+  }
+}
+
+@layer components {
+  .glow-primary {
+    box-shadow: var(--shadow-glow);
+  }
+
+  .glow-persona {
+    box-shadow: var(--shadow-persona);
+  }
+
+  .gradient-primary {
+    background: var(--gradient-primary);
+  }
+
+  .gradient-persona {
+    background: var(--gradient-persona);
+  }
+
+  .gradient-card {
+    background: var(--gradient-card);
+  }
+
+  .scene-pulse {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  .avatar-float {
+    animation: float 3s ease-in-out infinite;
+  }
+
+  .yell-appear {
+    animation: yell-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .slide-up {
+    animation: slide-up 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .fade-in {
+    animation: fade-in 0.3s ease-out;
+  }
+}
+
+@layer utilities {
+  .text-glow {
+    text-shadow: 0 0 20px hsl(177 100% 50% / 0.5);
+  }
+
+  .text-glow-accent {
+    text-shadow: 0 0 20px hsl(16 100% 60% / 0.6);
+  }
+
+  .bg-noise {
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%' height='100%' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  }
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px hsl(177 100% 50% / 0.4);
+  }
+  50% {
+    box-shadow: 0 0 40px hsl(177 100% 50% / 0.7);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes yell-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.5) translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes slide-up {
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Mapbox overrides */
+.mapboxgl-canvas {
+  outline: none;
+}
+
+.mapboxgl-ctrl-logo,
+.mapboxgl-ctrl-attrib {
+  display: none !important;
+}
