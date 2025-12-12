@@ -30,6 +30,12 @@ export interface ChatMessage {
   timestamp: Date;
 }
 
+interface AuthState {
+  accessToken: string;
+  userId: string;
+  email: string;
+}
+
 interface AppContextType {
   selectedPersona: Persona | null;
   setSelectedPersona: (persona: Persona | null) => void;
@@ -43,6 +49,10 @@ interface AppContextType {
   setActiveChatId: (id: string | null) => void;
   mapboxToken: string;
   setMapboxToken: (token: string) => void;
+  authState: AuthState | null;
+  login: (auth: AuthState) => void;
+  logout: () => void;
+  isAuthenticated: boolean;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -105,6 +115,23 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [chatRequests, setChatRequests] = useState<ChatRequest[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [mapboxToken, setMapboxToken] = useState('');
+  const [authState, setAuthState] = useState<AuthState | null>(() => {
+    // Try to restore auth from localStorage
+    const stored = localStorage.getItem('auth');
+    return stored ? JSON.parse(stored) : null;
+  });
+
+  const login = (auth: AuthState) => {
+    setAuthState(auth);
+    localStorage.setItem('auth', JSON.stringify(auth));
+  };
+
+  const logout = () => {
+    setAuthState(null);
+    localStorage.removeItem('auth');
+    setSelectedPersona(null);
+    setIsSceneActive(false);
+  };
 
   return (
     <AppContext.Provider
@@ -121,6 +148,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         setActiveChatId,
         mapboxToken,
         setMapboxToken,
+        authState,
+        login,
+        logout,
+        isAuthenticated: authState !== null,
       }}
     >
       {children}

@@ -7,10 +7,13 @@ import (
 )
 
 type User struct {
-	ID        uuid.UUID `json:"id"`
-	Email     string    `json:"email"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID                    uuid.UUID  `json:"id"`
+	Email                 string     `json:"email"`
+	LastLatitude          *float64   `json:"last_latitude,omitempty"`
+	LastLongitude         *float64   `json:"last_longitude,omitempty"`
+	LastLocationUpdatedAt *time.Time `json:"last_location_updated_at,omitempty"`
+	CreatedAt             time.Time  `json:"created_at"`
+	UpdatedAt             time.Time  `json:"updated_at"`
 }
 
 type Persona struct {
@@ -63,5 +66,14 @@ type OTPCode struct {
 	Email     string    `json:"email"`
 	Code      string    `json:"code"`
 	ExpiresAt time.Time `json:"expires_at"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type UserLocation struct {
+	ID        uuid.UUID `json:"id"`
+	UserID    uuid.UUID `json:"user_id"`
+	Latitude  float64   `json:"latitude"`
+	Longitude float64   `json:"longitude"`
+	Accuracy  *float64  `json:"accuracy,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }

@@ -34,9 +34,9 @@ type Location struct {
 
 type Hub struct {
 	clients    map[uuid.UUID]*Client
-	broadcast  chan BroadcastMessage
-	register   chan *Client
-	unregister chan *Client
+	Broadcast  chan BroadcastMessage
+	Register   chan *Client
+	Unregister chan *Client
 	mutex      sync.RWMutex
 }
 
@@ -58,22 +58,22 @@ var Upgrader = websocket.Upgrader{
 func NewHub() *Hub {
 	return &Hub{
 		clients:    make(map[uuid.UUID]*Client),
-		broadcast:  make(chan BroadcastMessage, 256),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
+		Broadcast:  make(chan BroadcastMessage, 256),
+		Register:   make(chan *Client),
+		Unregister: make(chan *Client),
 	}
 }
 
 func (h *Hub) Run() {
 	for {
 		select {
-		case client := <-h.register:
+		case client := <-h.Register:
 			h.mutex.Lock()
 			h.clients[client.ID] = client
 			h.mutex.Unlock()
 			log.Printf("Client %s connected", client.ID)
 
-		case client := <-h.unregister:
+		case client := <-h.Unregister:
 			h.mutex.Lock()
 			if _, ok := h.clients[client.ID]; ok {
 				delete(h.clients, client.ID)
@@ -82,7 +82,7 @@ func (h *Hub) Run() {
 			h.mutex.Unlock()
 			log.Printf("Client %s disconnected", client.ID)
 
-		case broadcastMsg := <-h.broadcast:
+		case broadcastMsg := <-h.Broadcast:
 			h.mutex.RLock()
 			for _, client := range h.clients {
 				// Skip excluded client
@@ -118,7 +118,7 @@ func (h *Hub) Run() {
 
 func (c *Client) ReadPump() {
 	defer func() {
-		c.Hub.unregister <- c
+		c.Hub.Unregister <- c
 		c.Conn.Close()
 	}()
 

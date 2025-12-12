@@ -1,7 +1,6 @@
 package routes
 
 import (
-	"net/http"
 	"scene-on/backend/handlers"
 	"scene-on/backend/middleware"
 	"scene-on/backend/websocket"
@@ -41,12 +40,21 @@ func SetupRoutes(router *gin.Engine, wsHub *websocket.Hub) {
 		{
 			auth.POST("/send-otp", handlers.SendOTP)
 			auth.POST("/verify-otp", handlers.VerifyOTP)
+			// Dummy Google login for development
+			auth.POST("/google/dummy", handlers.DummyGoogleLogin)
 		}
 
 		// Protected routes (require authentication)
 		protected := v1.Group("")
 		protected.Use(middleware.AuthMiddleware())
 		{
+			// Location
+			location := protected.Group("/location")
+			{
+				location.POST("/update", handlers.UpdateUserLocation)
+				location.GET("/current", handlers.GetUserLocation)
+			}
+
 			// Personas
 			personas := protected.Group("/personas")
 			{

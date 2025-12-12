@@ -102,10 +102,22 @@ func runMigrations() error {
 			expires_at TIMESTAMP NOT NULL,
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`CREATE TABLE IF NOT EXISTS user_locations (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+			latitude DOUBLE PRECISION NOT NULL,
+			longitude DOUBLE PRECISION NOT NULL,
+			accuracy DOUBLE PRECISION,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		)`,
 		`CREATE INDEX IF NOT EXISTS idx_scenes_location ON scenes(latitude, longitude)`,
 		`CREATE INDEX IF NOT EXISTS idx_scenes_active ON scenes(is_active, expires_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_requests_status ON chat_requests(status)`,
 		`CREATE INDEX IF NOT EXISTS idx_otp_email ON otp_codes(email, expires_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_user_locations_user ON user_locations(user_id, created_at DESC)`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_latitude DOUBLE PRECISION`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_longitude DOUBLE PRECISION`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_location_updated_at TIMESTAMP`,
 	}
 
 	for _, migration := range migrations {

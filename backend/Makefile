@@ -28,10 +28,14 @@ run: ## Run the application
 	go run $(MAIN_PATH)
 
 dev: ## Run in development mode with auto-reload (requires air)
-	@if command -v air > /dev/null; then \
+	@AIR_PATH=$$(go env GOPATH)/bin/air; \
+	if [ -f "$$AIR_PATH" ]; then \
+		$$AIR_PATH; \
+	elif command -v air > /dev/null; then \
 		air; \
 	else \
-		echo "Air not installed. Install with: go install github.com/cosmtrek/air@latest"; \
+		echo "Air not installed. Install with: go install github.com/air-verse/air@latest"; \
+		echo "Then add $$(go env GOPATH)/bin to your PATH"; \
 		echo "Running without auto-reload..."; \
 		go run $(MAIN_PATH); \
 	fi

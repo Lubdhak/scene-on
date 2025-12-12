@@ -51,6 +51,7 @@ func main() {
 	corsConfig.AllowOrigins = []string{
 		"http://localhost:5173",
 		"http://localhost:3000",
+		"http://localhost:8081", // Web frontend
 		// Add your production frontend URL here
 	}
 	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}

@@ -1,17 +1,81 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/context/AppContext';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { MapPin, Key, ExternalLink } from 'lucide-react';
+import { MapPin, Loader2, CheckCircle2 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 const MapTokenInput = () => {
-  const { setMapboxToken } = useApp();
-  const [token, setToken] = useState('');
+  const navigate = useNavigate();
+  const { authState, setMapboxToken } = useApp();
+  const { toast } = useToast();
+  const [isRequestingLocation, setIsRequestingLocation] = useState(false);
+  const [locationGranted, setLocationGranted] = useState(false);
 
-  const handleSubmit = () => {
-    if (token.trim()) {
-      setMapboxToken(token.trim());
+  // Request location on component mount
+  useEffect(() => {
+    requestLocation();
+  }, []);
+
+  const requestLocation = async () => {
+    if (!navigator.geolocation) {
+      toast({
+        title: 'Location not supported',
+        description: 'Your browser doesn\'t support geolocation',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsRequestingLocation(true);
+
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0,
+        });
+      });
+
+      const { latitude, longitude, accuracy } = position.coords;
+
+      // Send location to backend
+      const response = await fetch('http://localhost:8080/api/v1/location/update', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authState?.accessToken}`,
+        },
+        body: JSON.stringify({
+          latitude,
+          longitude,
+          accuracy,
+        }),
+      });
+
+      if (response.ok) {
+        setLocationGranted(true);
+        toast({
+          title: 'Location saved',
+          description: `Coordinates: ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
+        });
+
+        // Set a placeholder token to enable map view (will be replaced with actual token later)
+        setTimeout(() => {
+          setMapboxToken('placeholder-token');
+        }, 1500);
+      } else {
+        throw new Error('Failed to save location');
+      }
+    } catch (error) {
+      toast({
+        title: 'Location access denied',
+        description: error instanceof Error ? error.message : 'Please enable location access',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsRequestingLocation(false);
     }
   };
 
@@ -19,7 +83,7 @@ const MapTokenInput = () => {
     <div className="min-h-screen bg-background bg-noise flex items-center justify-center p-6">
       {/* Ambient glow */}
       <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-96 h-96 bg-primary/10 rounded-full blur-[150px] pointer-events-none" />
-      
+
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -29,54 +93,47 @@ const MapTokenInput = () => {
           {/* Icon */}
           <div className="flex justify-center mb-6">
             <div className="w-16 h-16 rounded-2xl gradient-primary flex items-center justify-center glow-primary">
-              <MapPin className="w-8 h-8 text-primary-foreground" />
+              {isRequestingLocation ? (
+                <Loader2 className="w-8 h-8 text-primary-foreground animate-spin" />
+              ) : locationGranted ? (
+                <CheckCircle2 className="w-8 h-8 text-primary-foreground" />
+              ) : (
+                <MapPin className="w-8 h-8 text-primary-foreground" />
+              )}
             </div>
           </div>
 
           {/* Title */}
           <div className="text-center mb-6">
-            <h2 className="text-2xl font-bold text-foreground mb-2">Map Access Required</h2>
+            <h2 className="text-2xl font-bold text-foreground mb-2">
+              {isRequestingLocation
+                ? 'Requesting Location'
+                : locationGranted
+                  ? 'Location Confirmed'
+                  : 'Location Access Required'}
+            </h2>
             <p className="text-muted-foreground text-sm">
-              Enter your Mapbox public token to enable the map view. 
-              You can find this in your Mapbox account dashboard.
+              {isRequestingLocation
+                ? 'Please allow location access in your browser...'
+                : locationGranted
+                  ? 'Redirecting to map view...'
+                  : 'Location permission needed for map features.'}
             </p>
           </div>
 
-          {/* Input */}
-          <div className="space-y-4">
-            <div className="relative">
-              <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-              <Input
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder="pk.eyJ1..."
-                className="pl-12 py-6 bg-muted border-border font-mono text-sm"
-              />
+          {/* Location Status */}
+          {locationGranted && (
+            <div className="p-4 bg-green-500/10 border border-green-500/20 rounded-xl">
+              <p className="text-sm text-green-600 dark:text-green-400 text-center font-medium">
+                ✓ Location saved successfully
+              </p>
             </div>
-
-            <Button
-              onClick={handleSubmit}
-              disabled={!token.trim()}
-              className="w-full py-6 rounded-xl gradient-primary text-primary-foreground font-semibold disabled:opacity-50"
-            >
-              Enable Map
-            </Button>
-
-            <a
-              href="https://mapbox.com/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors"
-            >
-              Get a Mapbox token
-              <ExternalLink className="w-4 h-4" />
-            </a>
-          </div>
+          )}
         </div>
 
         {/* Note */}
         <p className="text-center text-xs text-muted-foreground/60 mt-4">
-          Your token is stored locally and never sent to our servers.
+          Your location is stored securely and used only for map features.
         </p>
       </motion.div>
     </div>

@@ -33,6 +33,11 @@ type TokenResponse struct {
 	Email       string `json:"email"`
 }
 
+type DummyGoogleLoginRequest struct {
+	Email string `json:"email" binding:"required,email"`
+	Name  string `json:"name" binding:"required"`
+}
+
 //Send OTP sends a 6-digit code to the provided email
 func SendOTP(c *gin.Context) {
 	var req SendOTPRequest
@@ -164,4 +169,59 @@ func generateJWT(userID uuid.UUID, email string) (string, error) {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(os.Getenv("JWT_SECRET")))
+}
+
+// DummyGoogleLogin - Simulates Google OAuth login for development
+// TODO: Replace with actual Google OAuth in production
+func DummyGoogleLogin(c *gin.Context) {
+	var req DummyGoogleLoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get or create user
+	var user models.User
+	err := config.DB.QueryRow(
+		`SELECT id, email, created_at, updated_at FROM users WHERE email = $1`,
+		req.Email,
+	).Scan(&user.ID, &user.Email, &user.CreatedAt, &user.UpdatedAt)
+
+	if err == sql.ErrNoRows {
+		// Create new user
+		user.ID = uuid.New()
+		user.Email = req.Email
+		user.CreatedAt = time.Now()
+		user.UpdatedAt = time.Now()
+
+		_, err = config.DB.Exec(
+			`INSERT INTO users (id, email, created_at, updated_at) VALUES ($1, $2, $3, $4)`,
+			user.ID, user.Email, user.CreatedAt, user.UpdatedAt,
+		)
+		if err != nil {
+			log.Printf("Failed to create user: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
+			return
+		}
+
+		log.Printf("✓ New user created via Google login: %s", user.Email)
+	} else if err != nil {
+		log.Printf("Failed to get user: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user"})
+		return
+	}
+
+	// Generate JWT token
+	token, err := generateJWT(user.ID, user.Email)
+	if err != nil {
+		log.Printf("Failed to generate token: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		return
+	}
+
+	c.JSON(http.StatusOK, TokenResponse{
+		AccessToken: token,
+		UserID:      user.ID.String(),
+		Email:       user.Email,
+	})
 }
