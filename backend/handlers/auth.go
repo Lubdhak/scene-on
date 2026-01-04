@@ -50,7 +50,7 @@ func SendOTP(c *gin.Context) {
 	code := generateOTP()
 
 	// Store OTP in database (expires in 15 minutes)
-	expiresAt := time.Now().Add(15 * time.Minute)
+	expiresAt := time.Now().UTC().Add(15 * time.Minute)
 	
 	_, err := config.DB.Exec(
 		`INSERT INTO otp_codes (email, code, expires_at) VALUES ($1, $2, $3)`,

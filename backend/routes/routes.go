@@ -13,17 +13,26 @@ import (
 func SetupRoutes(router *gin.Engine, wsHub *websocket.Hub) {
 	// WebSocket endpoint
 	router.GET("/ws", func(c *gin.Context) {
-		// TODO: Extract user/scene info from token
+		sceneIDStr := c.Query("scene_id")
+		var sceneID uuid.UUID
+		if sceneIDStr != "" {
+			parsed, err := uuid.Parse(sceneIDStr)
+			if err == nil {
+				sceneID = parsed
+			}
+		}
+
 		conn, err := websocket.Upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
 			return
 		}
 
 		client := &websocket.Client{
-			ID:   uuid.New(),
-			Conn: conn,
-			Send: make(chan websocket.Message, 256),
-			Hub:  wsHub,
+			ID:      uuid.New(),
+			SceneID: sceneID,
+			Conn:    conn,
+			Send:    make(chan websocket.Message, 256),
+			Hub:     wsHub,
 		}
 
 		wsHub.Register <- client
@@ -58,8 +67,8 @@ func SetupRoutes(router *gin.Engine, wsHub *websocket.Hub) {
 			// Personas
 			personas := protected.Group("/personas")
 			{
-				personas.GET("", handlers.Ping) // TODO: Implement
-				personas.POST("", handlers.Ping) // TODO: Implement
+				personas.GET("", handlers.GetUserPersonas)
+				personas.POST("", handlers.GetOrCreatePersona)
 			}
 
 			// Scenes
@@ -67,6 +76,7 @@ func SetupRoutes(router *gin.Engine, wsHub *websocket.Hub) {
 			{
 				scenes.POST("/start", handlers.StartScene(wsHub))
 				scenes.POST("/stop", handlers.StopScene(wsHub))
+				scenes.GET("/active", handlers.GetActiveScene)
 				scenes.GET("/nearby", handlers.GetNearbyScenes)
 			}
 
@@ -80,8 +90,15 @@ func SetupRoutes(router *gin.Engine, wsHub *websocket.Hub) {
 			// Chat
 			chat := protected.Group("/chat")
 			{
-				chat.POST("/requests", handlers.Ping) // TODO: Implement
-				chat.GET("/requests/inbox", handlers.Ping) // TODO: Implement
+				chat.POST("/requests", handlers.SendChatRequest(wsHub))
+				chat.GET("/requests/inbox", handlers.GetChatInbox)
+				chat.GET("/requests/sent", handlers.GetSentChatRequests)
+				chat.POST("/requests/:id/accept", handlers.AcceptChatRequest(wsHub))
+				chat.POST("/requests/:id/reject", handlers.RejectChatRequest(wsHub))
+				chat.POST("/requests/:id/cancel", handlers.CancelChatRequest(wsHub))
+				chat.POST("/messages", handlers.SendChatMessage(wsHub))
+				chat.GET("/messages/:request_id", handlers.GetChatMessages)
+				chat.GET("/sessions", handlers.GetActiveChatSessions)
 			}
 		}
 	}

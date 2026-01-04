@@ -27,7 +27,7 @@ func UpdateUserLocation(c *gin.Context) {
 		return
 	}
 
-	now := time.Now()
+	now := time.Now().UTC()
 
 	// Update user's last location
 	_, err := config.DB.Exec(

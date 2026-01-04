@@ -1,0 +1,19 @@
+You can be any celeb person Persona
+& Pin Some Entity to the location in a Map View.
+People Can Yell broadcast messages with will visible on their avatar
+All people in Area gets notified when some turns on scene
+Last for as long the Scene ON 
+You can view others in Map View in fuzzy location & Request Chat with MSG
+You shall have your msg queue as long your scene is ON
+Scene OFF : You loose everything
+
+
+
+user match
+
+user chat
+
+
+expiry time based chat only one at a time
+
+

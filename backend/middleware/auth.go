@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -47,6 +48,7 @@ func AuthMiddleware() gin.HandlerFunc {
 		}
 
 		// Set user ID in context
+		log.Printf("🔐 AuthMiddleware: Extracted UserID from token: %v (type: %T)", claims.UserID, claims.UserID)
 		c.Set("user_id", claims.UserID)
 		c.Set("email", claims.Email)
 		c.Next()

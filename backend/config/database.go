@@ -13,7 +13,7 @@ var DB *sql.DB
 
 func InitDatabase() error {
 	connStr := fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s",
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s timezone=UTC",
 		os.Getenv("DB_HOST"),
 		os.Getenv("DB_PORT"),
 		os.Getenv("DB_USER"),
@@ -52,8 +52,8 @@ func runMigrations() error {
 		`CREATE TABLE IF NOT EXISTS users (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			email VARCHAR(255) UNIQUE NOT NULL,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS personas (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -62,8 +62,8 @@ func runMigrations() error {
 			avatar_url TEXT,
 			stats JSONB DEFAULT '{}',
 			is_active BOOLEAN DEFAULT true,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS scenes (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -71,36 +71,36 @@ func runMigrations() error {
 			latitude DOUBLE PRECISION NOT NULL,
 			longitude DOUBLE PRECISION NOT NULL,
 			is_active BOOLEAN DEFAULT true,
-			started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			expires_at TIMESTAMP NOT NULL,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			started_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+			expires_at TIMESTAMPTZ NOT NULL,
+			created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS yells (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			scene_id UUID REFERENCES scenes(id) ON DELETE CASCADE,
 			content TEXT NOT NULL,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS chat_requests (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			from_scene_id UUID REFERENCES scenes(id) ON DELETE CASCADE,
 			to_scene_id UUID REFERENCES scenes(id) ON DELETE CASCADE,
 			status VARCHAR(20) DEFAULT 'pending',
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS chat_messages (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			chat_request_id UUID REFERENCES chat_requests(id) ON DELETE CASCADE,
 			from_scene_id UUID REFERENCES scenes(id) ON DELETE CASCADE,
 			content TEXT NOT NULL,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS otp_codes (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			email VARCHAR(255) NOT NULL,
 			code VARCHAR(6) NOT NULL,
-			expires_at TIMESTAMP NOT NULL,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			expires_at TIMESTAMPTZ NOT NULL,
+			created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE TABLE IF NOT EXISTS user_locations (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -108,7 +108,7 @@ func runMigrations() error {
 			latitude DOUBLE PRECISION NOT NULL,
 			longitude DOUBLE PRECISION NOT NULL,
 			accuracy DOUBLE PRECISION,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_scenes_location ON scenes(latitude, longitude)`,
 		`CREATE INDEX IF NOT EXISTS idx_scenes_active ON scenes(is_active, expires_at)`,
@@ -118,6 +118,33 @@ func runMigrations() error {
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_latitude DOUBLE PRECISION`,
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_longitude DOUBLE PRECISION`,
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_location_updated_at TIMESTAMP`,
+		// Chat enhancements for message support and expiration
+		`ALTER TABLE chat_requests ADD COLUMN IF NOT EXISTS message TEXT`,
+		`ALTER TABLE chat_requests ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`,
+		`ALTER TABLE chat_requests ADD COLUMN IF NOT EXISTS accepted_at TIMESTAMPTZ`,
+		`CREATE INDEX IF NOT EXISTS idx_chat_requests_to_scene ON chat_requests(to_scene_id, status)`,
+		`CREATE INDEX IF NOT EXISTS idx_chat_requests_expiration ON chat_requests(expires_at, status)`,
+		`CREATE INDEX IF NOT EXISTS idx_chat_messages_request ON chat_messages(chat_request_id, created_at)`,
+		// Persona customization support
+		`ALTER TABLE personas ADD COLUMN IF NOT EXISTS description VARCHAR(255)`,
+
+		// Migration to TIMESTAMPTZ for existing columns
+		`ALTER TABLE users ALTER COLUMN created_at TYPE TIMESTAMPTZ`,
+		`ALTER TABLE users ALTER COLUMN updated_at TYPE TIMESTAMPTZ`,
+		`ALTER TABLE users ALTER COLUMN last_location_updated_at TYPE TIMESTAMPTZ`,
+		`ALTER TABLE personas ALTER COLUMN created_at TYPE TIMESTAMPTZ`,
+		`ALTER TABLE personas ALTER COLUMN updated_at TYPE TIMESTAMPTZ`,
+		`ALTER TABLE scenes ALTER COLUMN started_at TYPE TIMESTAMPTZ`,
+		`ALTER TABLE scenes ALTER COLUMN expires_at TYPE TIMESTAMPTZ`,
+		`ALTER TABLE scenes ALTER COLUMN created_at TYPE TIMESTAMPTZ`,
+		`ALTER TABLE yells ALTER COLUMN created_at TYPE TIMESTAMPTZ`,
+		`ALTER TABLE chat_requests ALTER COLUMN created_at TYPE TIMESTAMPTZ`,
+		`ALTER TABLE chat_requests ALTER COLUMN expires_at TYPE TIMESTAMPTZ`,
+		`ALTER TABLE chat_requests ALTER COLUMN accepted_at TYPE TIMESTAMPTZ`,
+		`ALTER TABLE chat_messages ALTER COLUMN created_at TYPE TIMESTAMPTZ`,
+		`ALTER TABLE otp_codes ALTER COLUMN expires_at TYPE TIMESTAMPTZ`,
+		`ALTER TABLE otp_codes ALTER COLUMN created_at TYPE TIMESTAMPTZ`,
+		`ALTER TABLE user_locations ALTER COLUMN created_at TYPE TIMESTAMPTZ`,
 	}
 
 	for _, migration := range migrations {

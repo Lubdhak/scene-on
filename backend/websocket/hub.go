@@ -33,11 +33,18 @@ type Location struct {
 }
 
 type Hub struct {
-	clients    map[uuid.UUID]*Client
-	Broadcast  chan BroadcastMessage
-	Register   chan *Client
-	Unregister chan *Client
-	mutex      sync.RWMutex
+	clients      map[uuid.UUID]*Client
+	sceneClients map[uuid.UUID]map[uuid.UUID]*Client // SceneID -> ClientID -> Client
+	Broadcast    chan BroadcastMessage
+	Targeted     chan TargetedMessage
+	Register     chan *Client
+	Unregister   chan *Client
+	mutex        sync.RWMutex
+}
+
+type TargetedMessage struct {
+	Message       Message
+	TargetSceneID uuid.UUID
 }
 
 type BroadcastMessage struct {
@@ -57,10 +64,12 @@ var Upgrader = websocket.Upgrader{
 
 func NewHub() *Hub {
 	return &Hub{
-		clients:    make(map[uuid.UUID]*Client),
-		Broadcast:  make(chan BroadcastMessage, 256),
-		Register:   make(chan *Client),
-		Unregister: make(chan *Client),
+		clients:      make(map[uuid.UUID]*Client),
+		sceneClients: make(map[uuid.UUID]map[uuid.UUID]*Client),
+		Broadcast:    make(chan BroadcastMessage, 256),
+		Targeted:     make(chan TargetedMessage, 256),
+		Register:     make(chan *Client),
+		Unregister:   make(chan *Client),
 	}
 }
 
@@ -70,17 +79,45 @@ func (h *Hub) Run() {
 		case client := <-h.Register:
 			h.mutex.Lock()
 			h.clients[client.ID] = client
+			if client.SceneID != uuid.Nil {
+				if h.sceneClients[client.SceneID] == nil {
+					h.sceneClients[client.SceneID] = make(map[uuid.UUID]*Client)
+				}
+				h.sceneClients[client.SceneID][client.ID] = client
+			}
 			h.mutex.Unlock()
-			log.Printf("Client %s connected", client.ID)
+			log.Printf("Client %s (Scene: %s) connected", client.ID, client.SceneID)
 
 		case client := <-h.Unregister:
 			h.mutex.Lock()
 			if _, ok := h.clients[client.ID]; ok {
 				delete(h.clients, client.ID)
+				if client.SceneID != uuid.Nil && h.sceneClients[client.SceneID] != nil {
+					delete(h.sceneClients[client.SceneID], client.ID)
+					if len(h.sceneClients[client.SceneID]) == 0 {
+						delete(h.sceneClients, client.SceneID)
+					}
+				}
 				close(client.Send)
 			}
 			h.mutex.Unlock()
 			log.Printf("Client %s disconnected", client.ID)
+
+		case targetedMsg := <-h.Targeted:
+			h.mutex.RLock()
+			clients := h.sceneClients[targetedMsg.TargetSceneID]
+			if len(clients) == 0 {
+				log.Printf("⚠️  No clients found for targeted SceneID: %s", targetedMsg.TargetSceneID)
+			}
+			for _, client := range clients {
+				select {
+				case client.Send <- targetedMsg.Message:
+					log.Printf("✅ Targeted message %s sent to client %s (Scene: %s)", targetedMsg.Message.Type, client.ID, client.SceneID)
+				default:
+					log.Printf("❌ Failed to send targeted message %s to client %s", targetedMsg.Message.Type, client.ID)
+				}
+			}
+			h.mutex.RUnlock()
 
 		case broadcastMsg := <-h.Broadcast:
 			h.mutex.RLock()
@@ -106,9 +143,7 @@ func (h *Hub) Run() {
 				select {
 				case client.Send <- broadcastMsg.Message:
 				default:
-					// Client send buffer full, disconnect
-					close(client.Send)
-					delete(h.clients, client.ID)
+					// Client send buffer full, cleanup handled elsewhere or could be done here
 				}
 			}
 			h.mutex.RUnlock()

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"scene-on/backend/config"
+	"scene-on/backend/handlers"
 	"scene-on/backend/routes"
 	"scene-on/backend/websocket"
 
@@ -27,6 +28,9 @@ func main() {
 	}
 	defer config.CloseDatabase()
 
+	// Cleanup stale scenes on boot
+	handlers.CleanupActiveScenes()
+
 	// Initialize Redis
 	if err := config.InitRedis(); err != nil {
 		log.Fatalf("Failed to initialize Redis: %v", err)
@@ -36,6 +40,9 @@ func main() {
 	// Initialize WebSocket hub
 	wsHub = websocket.NewHub()
 	go wsHub.Run()
+
+	// Start chat cleanup worker
+	go handlers.StartChatCleanupWorker(wsHub)
 
 	// Set Gin mode
 	ginMode := os.Getenv("GIN_MODE")
@@ -51,7 +58,7 @@ func main() {
 	corsConfig.AllowOrigins = []string{
 		"http://localhost:5173",
 		"http://localhost:3000",
-		"http://localhost:8081", // Web frontend
+		"http://localhost:4200", // Web frontend
 		// Add your production frontend URL here
 	}
 	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
@@ -75,7 +82,7 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-	
+
 	log.Printf("🚀 Server starting on port %s", port)
 	if err := router.Run(":" + port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
