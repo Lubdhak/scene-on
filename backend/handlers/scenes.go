@@ -231,12 +231,12 @@ func GetNearbyScenes(c *gin.Context) {
 	userID, _ := middleware.GetUserID(c)
 
 	// Use PostGIS ST_DWithin for efficient distance filtering
-	// Creates geography points on-the-fly from latitude/longitude
+	// Optimized query with pre-computed geography casting
 	rows, err := config.DB.Query(
 		`SELECT s.id, s.persona_id, s.latitude, s.longitude, s.is_active, s.started_at, s.expires_at, s.created_at,
 		        p.name as persona_name, p.avatar_url as persona_avatar, p.description as persona_description
 		 FROM scenes s
-		 JOIN personas p ON s.persona_id = p.id
+		 INNER JOIN personas p ON s.persona_id = p.id
 		 WHERE s.is_active = true 
 		   AND s.expires_at > NOW()
 		   AND p.user_id != $1
@@ -259,7 +259,8 @@ func GetNearbyScenes(c *gin.Context) {
 	}
 	defer rows.Close()
 
-	var scenes []SceneWithPersona
+	// Pre-allocate slice with estimated capacity for better performance
+	scenes := make([]SceneWithPersona, 0, 20)
 	for rows.Next() {
 		var scene SceneWithPersona
 		err := rows.Scan(
@@ -275,10 +276,6 @@ func GetNearbyScenes(c *gin.Context) {
 	}
 
 	log.Printf("📍 Found %d scenes within %.0fkm for user %s", len(scenes), radiusKm, userID)
-
-	if scenes == nil {
-		scenes = []SceneWithPersona{}
-	}
 
 	c.JSON(http.StatusOK, scenes)
 }

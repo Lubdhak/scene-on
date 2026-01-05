@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useMemo, memo, forwardRef } from 'react';
+import { useRef, useEffect, useState, useMemo, memo, forwardRef, useCallback } from 'react';
 import { useApp, ChatRequest } from '@/context/AppContext';
 import { Button } from '@/components/ui/button';
 import { MessageCircle, MapPin, AlertCircle, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { scenesApi } from '@/api/scenes';
 import { chatApi, ChatSession } from '@/api/chat';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { debounce } from '@/utils/debounce';
 
 interface NearbyUser {
   sceneId: string;
@@ -197,36 +198,39 @@ const MapContainer = () => {
   }, [subscribe]);
 
   // Fetch nearby scenes when scene is active or when distance radius changes
+  // Memoize the fetch function to prevent recreating on every render
+  const fetchNearby = useCallback(async () => {
+    if (!isSceneActive || !userLocation) return;
+
+    try {
+      const scenes = await scenesApi.getNearbyScenes(userLocation.lat, userLocation.lng, distanceRadius);
+
+      // Transform scenes to nearby users format
+      const users: NearbyUser[] = scenes.map((scene: any) => ({
+        sceneId: scene.id,
+        personaId: scene.persona_id,
+        avatar: scene.persona_avatar || '❓',
+        name: scene.persona_name || 'Unknown',
+        description: scene.persona_description || '',
+        latitude: scene.latitude,
+        longitude: scene.longitude,
+      }));
+
+      setNearbyUsers(users);
+    } catch (error) {
+      console.error('Failed to fetch nearby scenes:', error);
+    }
+  }, [isSceneActive, userLocation, distanceRadius]);
+
   useEffect(() => {
     if (!isSceneActive || !userLocation) return;
 
-    const fetchNearby = async () => {
-      try {
-        const scenes = await scenesApi.getNearbyScenes(userLocation.lat, userLocation.lng, distanceRadius);
-
-        // Transform scenes to nearby users format
-        const users: NearbyUser[] = scenes.map((scene: any) => ({
-          sceneId: scene.id,
-          personaId: scene.persona_id,
-          avatar: scene.persona_avatar || '❓',
-          name: scene.persona_name || 'Unknown',
-          description: scene.persona_description || '',
-          latitude: scene.latitude,
-          longitude: scene.longitude,
-        }));
-
-        setNearbyUsers(users);
-      } catch (error) {
-        console.error('Failed to fetch nearby scenes:', error);
-      }
-    };
-
     fetchNearby();
 
-    // Refresh every 10 seconds
-    const interval = setInterval(fetchNearby, 10000);
+    // Refresh every 15 seconds (reduced frequency for less resource usage)
+    const interval = setInterval(fetchNearby, 15000);
     return () => clearInterval(interval);
-  }, [isSceneActive, userLocation, distanceRadius]);
+  }, [fetchNearby, isSceneActive, userLocation]);
 
   // Get user location
   useEffect(() => {

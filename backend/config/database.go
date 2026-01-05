@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	_ "github.com/lib/pq"
 )
@@ -33,9 +34,11 @@ func InitDatabase() error {
 		return fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	// Set connection pool settings
-	DB.SetMaxOpenConns(25)
-	DB.SetMaxIdleConns(5)
+	// Optimize connection pool for performance
+	DB.SetMaxOpenConns(50)           // Increased for better concurrency
+	DB.SetMaxIdleConns(10)           // More idle connections ready
+	DB.SetConnMaxLifetime(5 * time.Minute) // Recycle connections every 5min
+	DB.SetConnMaxIdleTime(2 * time.Minute) // Close idle connections after 2min
 
 	log.Println("✓ Database connected successfully")
 	
@@ -127,6 +130,12 @@ func runMigrations() error {
 		`CREATE INDEX IF NOT EXISTS idx_chat_messages_request ON chat_messages(chat_request_id, created_at)`,
 		// Persona customization support
 		`ALTER TABLE personas ADD COLUMN IF NOT EXISTS description VARCHAR(255)`,
+
+		// Performance indexes for spatial queries and active scene lookups
+		`CREATE INDEX IF NOT EXISTS idx_scenes_active_expires ON scenes(is_active, expires_at) WHERE is_active = true`,
+		`CREATE INDEX IF NOT EXISTS idx_personas_user_active ON personas(user_id, is_active) WHERE is_active = true`,
+		`CREATE INDEX IF NOT EXISTS idx_chat_requests_scenes ON chat_requests(from_scene_id, to_scene_id, status, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_scenes_persona_active ON scenes(persona_id, is_active, expires_at)`,
 
 		// Migration to TIMESTAMPTZ for existing columns
 		`ALTER TABLE users ALTER COLUMN created_at TYPE TIMESTAMPTZ`,

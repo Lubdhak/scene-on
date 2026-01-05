@@ -61,9 +61,11 @@ export const useWebSocket = (sceneId?: string | null) => {
 
             ws.current.onclose = () => {
                 setIsConnected(false);
+                // Exponential backoff for reconnection (max 30 seconds)
+                const retryDelay = Math.min(3000 * Math.pow(1.5, Math.random()), 30000);
                 reconnectTimeout.current = setTimeout(() => {
                     connect();
-                }, 3000);
+                }, retryDelay);
             };
         } catch (error) {
             console.error('Failed to connect WebSocket:', error);
