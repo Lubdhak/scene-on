@@ -1,11 +1,18 @@
 SHELL := /bin/bash
 
-# Detect commands
+# ---------------------------------------------------------------------
+# Command Detection
+# ---------------------------------------------------------------------
 NPM := $(shell command -v npm 2>/dev/null)
 BUN := $(shell command -v bun 2>/dev/null)
-RM := $(shell command -v rm 2>/dev/null)
+RM  := $(shell command -v rm 2>/dev/null)
 
+# Local binaries
+VITE_BIN := node_modules/.bin/vite
+
+# ---------------------------------------------------------------------
 # Cross-platform safe delete
+# ---------------------------------------------------------------------
 define SAFE_RM
 	@if [ -n "$(RM)" ]; then \
 		rm -rf $(1); \
@@ -14,7 +21,15 @@ define SAFE_RM
 	fi
 endef
 
-.PHONY: help install install-bun dev run dev-bun run-bun build build-dev preview lint lint-fix clean clean-all reinstall start start-bun check-npm check-bun
+.PHONY: \
+	help \
+	check-npm check-bun check-vite \
+	install install-bun \
+	dev run dev-bun run-bun \
+	build build-dev preview \
+	lint lint-fix \
+	clean clean-all reinstall \
+	start start-bun
 
 # ---------------------------------------------------------------------
 # HELP
@@ -65,6 +80,14 @@ check-bun:
 		echo "bun is not installed. Falling back to npm."; \
 	fi
 
+check-vite: check-npm
+	@if [ ! -f "$(VITE_BIN)" ]; then \
+		echo "Vite not found. Installing vite as dev dependency..."; \
+		$(NPM) install --save-dev vite; \
+	else \
+		echo "Vite found."; \
+	fi
+
 # ---------------------------------------------------------------------
 # INSTALLATION
 # ---------------------------------------------------------------------
@@ -84,13 +107,13 @@ endif
 # ---------------------------------------------------------------------
 # DEVELOPMENT
 # ---------------------------------------------------------------------
-dev: check-npm
+dev: check-npm check-vite
 	@echo "Starting development server (npm)..."
 	$(NPM) run dev
 
 run: dev
 
-dev-bun: check-bun
+dev-bun: check-bun check-vite
 ifeq ($(BUN),)
 	@echo "bun not found. Using npm instead."
 	$(NPM) run dev
@@ -104,15 +127,15 @@ run-bun: dev-bun
 # ---------------------------------------------------------------------
 # BUILD
 # ---------------------------------------------------------------------
-build: check-npm
+build: check-npm check-vite
 	@echo "Building for production..."
 	$(NPM) run build
 
-build-dev: check-npm
+build-dev: check-npm check-vite
 	@echo "Building for development..."
 	$(NPM) run build:dev
 
-preview: check-npm
+preview: check-npm check-vite
 	@echo "Previewing production build..."
 	$(NPM) run preview
 

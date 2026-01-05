@@ -31,12 +31,6 @@ func main() {
 	// Cleanup stale scenes on boot
 	handlers.CleanupActiveScenes()
 
-	// Initialize Redis
-	if err := config.InitRedis(); err != nil {
-		log.Fatalf("Failed to initialize Redis: %v", err)
-	}
-	defer config.CloseRedis()
-
 	// Initialize WebSocket hub
 	wsHub = websocket.NewHub()
 	go wsHub.Run()

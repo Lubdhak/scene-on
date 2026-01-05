@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"database/sql"
-	"fmt"
 	"log"
 	"net/http"
 	"scene-on/backend/config"
@@ -115,14 +114,6 @@ func StartScene(wsHub *websocket.Hub) gin.HandlerFunc {
 			return
 		}
 
-		// Store in Redis for quick access
-		config.RedisClient.HSet(c, fmt.Sprintf("scene:%s", scene.ID), map[string]interface{}{
-			"persona_id": scene.PersonaID.String(),
-			"latitude":   scene.Latitude,
-			"longitude":  scene.Longitude,
-		})
-		config.RedisClient.Expire(c, fmt.Sprintf("scene:%s", scene.ID), 4*time.Hour)
-
 		// Broadcast scene event to nearby users
 		wsHub.Broadcast <- websocket.BroadcastMessage{
 			Message: websocket.Message{
@@ -185,9 +176,6 @@ func StopScene(wsHub *websocket.Hub) gin.HandlerFunc {
 			return
 		}
 
-		// Remove from Redis
-		config.RedisClient.Del(c, fmt.Sprintf("scene:%s", sceneID))
-
 		// Broadcast scene ended event
 		log.Printf("📢 Broadcasting scene.ended for scene %s", sceneID)
 		wsHub.Broadcast <- websocket.BroadcastMessage{
@@ -231,9 +219,6 @@ func CleanupActiveScenes() {
 		log.Printf("✓ Deleted %d personas (ephemeral storage)", count)
 	}
 
-	// Redis cleanup could be more complex depending on key structure, 
-	// but since our scenes have a prefix scene:* we can use Scan/Del if needed.
-	// For now, the database is the source of truth for GetNearbyScenes/GetActiveScene.
 	log.Println("✓ Startup cleanup complete")
 }
 
