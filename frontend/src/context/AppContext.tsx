@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode, useCallback } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useCallback, useEffect } from 'react';
 import { scenesApi } from '@/api/scenes';
 import { ChatSession } from '@/api/chat';
 
@@ -64,6 +64,8 @@ interface AppContextType {
   setShowInbox: (show: boolean) => void;
   unreadSessionIds: string[];
   setUnreadSessionIds: React.Dispatch<React.SetStateAction<string[]>>;
+  distanceRadius: number;
+  setDistanceRadius: (radius: number) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -95,6 +97,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   });
   const [showInbox, setShowInbox] = useState(false);
   const [unreadSessionIds, setUnreadSessionIds] = useState<string[]>([]);
+  const [distanceRadius, setDistanceRadius] = useState<number>(() => {
+    try {
+      const stored = localStorage.getItem('distanceRadius');
+      return stored ? parseInt(stored, 10) : 50; // Default 50km
+    } catch {
+      return 50;
+    }
+  });
+
+  // Persist distance radius to localStorage
+  useEffect(() => {
+    localStorage.setItem('distanceRadius', distanceRadius.toString());
+  }, [distanceRadius]);
 
   const login = useCallback((auth: AuthState) => {
     setAuthState(auth);
@@ -114,6 +129,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setCurrentSceneId(null);
     setShowInbox(false);
     setUnreadSessionIds([]);
+    setDistanceRadius(50); // Reset to default
     // Clear local storage if needed
     localStorage.removeItem('auth');
     localStorage.removeItem('accessToken');
@@ -149,7 +165,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         showInbox,
         setShowInbox,
         unreadSessionIds,
-        setUnreadSessionIds
+        setUnreadSessionIds,
+        distanceRadius,
+        setDistanceRadius
       }}
     >
       {children}

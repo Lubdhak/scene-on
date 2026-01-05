@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"net/http"
 	"scene-on/backend/config"
@@ -210,25 +211,46 @@ func CleanupActiveScenes() {
 func GetNearbyScenes(c *gin.Context) {
 	lat := c.Query("latitude")
 	lon := c.Query("longitude")
+	radiusStr := c.DefaultQuery("radius", "50") // Default 50km if not provided
 	
 	if lat == "" || lon == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "latitude and longitude required"})
 		return
 	}
 
+	// Parse radius (in kilometers)
+	var radiusKm float64
+	if _, err := fmt.Sscanf(radiusStr, "%f", &radiusKm); err != nil || radiusKm <= 0 || radiusKm > 100 {
+		radiusKm = 50 // Default to 50km if invalid
+	}
+
+	// Convert km to meters for ST_DWithin
+	radiusMeters := radiusKm * 1000
+
 	// Get current user's ID to exclude their own scenes
 	userID, _ := middleware.GetUserID(c)
 
-	// Fetch active scenes with persona information, excluding user's own scenes
+	// Use PostGIS ST_DWithin for efficient distance filtering
+	// Creates geography points on-the-fly from latitude/longitude
 	rows, err := config.DB.Query(
 		`SELECT s.id, s.persona_id, s.latitude, s.longitude, s.is_active, s.started_at, s.expires_at, s.created_at,
 		        p.name as persona_name, p.avatar_url as persona_avatar, p.description as persona_description
 		 FROM scenes s
 		 JOIN personas p ON s.persona_id = p.id
-		 WHERE s.is_active = true AND s.expires_at > NOW()
-		 AND p.user_id != $1
-		 LIMIT 50`,
-		userID,
+		 WHERE s.is_active = true 
+		   AND s.expires_at > NOW()
+		   AND p.user_id != $1
+		   AND ST_DWithin(
+		       ST_SetSRID(ST_MakePoint(s.longitude, s.latitude), 4326)::geography,
+		       ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography,
+		       $4
+		   )
+		 ORDER BY ST_Distance(
+		     ST_SetSRID(ST_MakePoint(s.longitude, s.latitude), 4326)::geography,
+		     ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography
+		 )
+		 LIMIT 100`,
+		userID, lon, lat, radiusMeters,
 	)
 	if err != nil {
 		log.Printf("❌ Failed to fetch scenes: %v", err)
@@ -252,7 +274,7 @@ func GetNearbyScenes(c *gin.Context) {
 		scenes = append(scenes, scene)
 	}
 
-	log.Printf("📍 Found %d nearby active scenes for user %s", len(scenes), userID)
+	log.Printf("📍 Found %d scenes within %.0fkm for user %s", len(scenes), radiusKm, userID)
 
 	if scenes == nil {
 		scenes = []SceneWithPersona{}

@@ -165,7 +165,7 @@ const MapContainer = () => {
     mapboxToken, selectedPersona, isSceneActive, currentYell, authState,
     sentChatRequests, setSentChatRequests, activeSessions, setActiveSessions,
     chatRequests, setChatRequests, setActiveChatId, currentSceneId, setShowInbox,
-    setUnreadSessionIds
+    setUnreadSessionIds, distanceRadius
   } = useApp();
   // ... (keeping other state)
   const [mapError, setMapError] = useState(false);
@@ -196,13 +196,13 @@ const MapContainer = () => {
     };
   }, [subscribe]);
 
-  // Fetch nearby scenes when scene is active
+  // Fetch nearby scenes when scene is active or when distance radius changes
   useEffect(() => {
     if (!isSceneActive || !userLocation) return;
 
     const fetchNearby = async () => {
       try {
-        const scenes = await scenesApi.getNearbyScenes(userLocation.lat, userLocation.lng);
+        const scenes = await scenesApi.getNearbyScenes(userLocation.lat, userLocation.lng, distanceRadius);
 
         // Transform scenes to nearby users format
         const users: NearbyUser[] = scenes.map((scene: any) => ({
@@ -226,7 +226,7 @@ const MapContainer = () => {
     // Refresh every 10 seconds
     const interval = setInterval(fetchNearby, 10000);
     return () => clearInterval(interval);
-  }, [isSceneActive, userLocation]);
+  }, [isSceneActive, userLocation, distanceRadius]);
 
   // Get user location
   useEffect(() => {

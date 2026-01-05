@@ -109,3 +109,4 @@ coverage/
 # Documentation build
 docs/_build/
 site/
+backend/scene-on

@@ -67,11 +67,13 @@ export const scenesApi = {
     },
 
     // Get nearby scenes
-    getNearbyScenes: async (latitude: number, longitude: number): Promise<Scene[]> => {
+    getNearbyScenes: async (latitude: number, longitude: number, radius?: number): Promise<Scene[]> => {
         const api = createAuthAxios();
-        const response = await api.get<Scene[]>('/scenes/nearby', {
-            params: { latitude, longitude },
-        });
+        const params: any = { latitude, longitude };
+        if (radius !== undefined) {
+            params.radius = radius;
+        }
+        const response = await api.get<Scene[]>('/scenes/nearby', { params });
         return response.data;
     },
 };
