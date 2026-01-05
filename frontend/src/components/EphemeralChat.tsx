@@ -78,6 +78,18 @@ const EphemeralChat = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // ESC key handler to close chat
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeChatId]);
+
   // Countdown timer synced with backend expiration
   useEffect(() => {
     if (!expiresAt) return;
@@ -156,7 +168,6 @@ const EphemeralChat = () => {
 
   const handleClose = () => {
     setActiveChatId(null);
-    setShowInbox(true);
     setMessages([]);
     setTimeLeft(300);
     setExpiresAt(null);

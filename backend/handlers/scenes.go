@@ -187,19 +187,13 @@ func StopScene(wsHub *websocket.Hub) gin.HandlerFunc {
 			},
 		}
 
-	// Delete the persona itself (Strict ephemeral policy)
-	_, err = config.DB.Exec(`DELETE FROM personas WHERE user_id = $1`, userID)
-	if err != nil {
-		log.Printf("Warning: Failed to delete persona for user %s: %v", userID, err)
+		c.JSON(http.StatusOK, gin.H{"message": "Scene stopped"})
 	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Scene stopped and persona deleted"})
-}
 }
 
-// CleanupActiveScenes marks all scenes as inactive on startup AND deletes all personas
+// CleanupActiveScenes marks all scenes as inactive on startup
 func CleanupActiveScenes() {
-	log.Println("🧹 Cleaning up active scenes & personas on startup...")
+	log.Println("🧹 Cleaning up active scenes on startup...")
 	
 	// Mark all scenes inactive
 	res, err := config.DB.Exec(`UPDATE scenes SET is_active = false WHERE is_active = true`)
@@ -208,15 +202,6 @@ func CleanupActiveScenes() {
 	} else {
 		count, _ := res.RowsAffected()
 		log.Printf("✓ Marked %d scenes as inactive", count)
-	}
-
-	// Delete ALL personas (Ephemeral: start fresh on server restart)
-	resPer, err := config.DB.Exec(`DELETE FROM personas`)
-	if err != nil {
-		log.Printf("❌ Failed to cleanup database personas: %v", err)
-	} else {
-		count, _ := resPer.RowsAffected()
-		log.Printf("✓ Deleted %d personas (ephemeral storage)", count)
 	}
 
 	log.Println("✓ Startup cleanup complete")

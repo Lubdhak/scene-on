@@ -65,16 +65,6 @@ const SceneToggle = () => {
                 setCurrentSceneId(scene.id);
               } catch (error: any) {
                 console.error('Failed to start scene:', error);
-
-                // Handle missing persona (ephemeral cleanup)
-                if (error.response?.data?.code === 'PERSONA_NOT_FOUND' || error.response?.status === 404) {
-                  alert('Session expired. Please recreate your identity.');
-                  setSelectedPersona(null);
-                  localStorage.removeItem('selectedPersona');
-                  window.location.reload(); // Force reload to go back to persona selection
-                  return;
-                }
-
                 console.error('Error response:', error.response?.data);
                 alert(error.response?.data?.error || 'Failed to start scene');
               } finally {
@@ -90,15 +80,6 @@ const SceneToggle = () => {
                 })
                 .catch((err: any) => {
                   console.error('Failed to start scene:', err);
-
-                  if (err.response?.data?.code === 'PERSONA_NOT_FOUND' || err.response?.status === 404) {
-                    alert('Session expired. Please recreate your identity.');
-                    setSelectedPersona(null);
-                    localStorage.removeItem('selectedPersona');
-                    window.location.reload();
-                    return;
-                  }
-
                   alert(err.response?.data?.error || 'Failed to start scene');
                 })
                 .finally(() => {
@@ -114,15 +95,6 @@ const SceneToggle = () => {
         }
       } catch (error: any) {
         console.error('Failed to start scene:', error);
-
-        if (error.response?.data?.code === 'PERSONA_NOT_FOUND' || error.response?.status === 404) {
-          alert('Session expired. Please recreate your identity.');
-          setSelectedPersona(null);
-          localStorage.removeItem('selectedPersona');
-          window.location.reload();
-          return;
-        }
-
         alert(error.response?.data?.error || 'Failed to start scene');
         setIsLoading(false);
       }
