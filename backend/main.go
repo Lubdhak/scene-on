@@ -28,6 +28,9 @@ func main() {
 	}
 	defer config.CloseDatabase()
 
+	// Initialize Google OAuth
+	handlers.InitGoogleOAuth()
+
 	// Cleanup stale scenes on boot
 	handlers.CleanupActiveScenes()
 
@@ -52,7 +55,8 @@ func main() {
 	corsConfig.AllowOrigins = []string{
 		"http://localhost:5173",
 		"http://localhost:3000",
-		"http://localhost:4200", // Web frontend
+		"http://localhost:4200",
+		"http://localhost:8081", // Web frontend
 		// Add your production frontend URL here
 	}
 	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}

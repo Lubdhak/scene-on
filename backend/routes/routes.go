@@ -49,7 +49,12 @@ func SetupRoutes(router *gin.Engine, wsHub *websocket.Hub) {
 		{
 			auth.POST("/send-otp", handlers.SendOTP)
 			auth.POST("/verify-otp", handlers.VerifyOTP)
-			// Dummy Google login for development
+			
+			// Google OAuth routes
+			auth.GET("/google/login", handlers.GoogleLogin)
+			auth.GET("/google/callback", handlers.GoogleCallback)
+			
+			// Deprecated dummy login - kept for backward compatibility during migration
 			auth.POST("/google/dummy", handlers.DummyGoogleLogin)
 		}
 
