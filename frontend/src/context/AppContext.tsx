@@ -51,84 +51,74 @@ interface AppContextType {
   setActiveSessions: React.Dispatch<React.SetStateAction<ChatSession[]>>;
   currentSceneId: string | null;
   setCurrentSceneId: (id: string | null) => void;
-  sentRequestSceneIds: string[];
-  setSentRequestSceneIds: React.Dispatch<React.SetStateAction<string[]>>;
+  sentChatRequests: ChatRequest[];
+  setSentChatRequests: React.Dispatch<React.SetStateAction<ChatRequest[]>>;
   mapboxToken: string;
   setMapboxToken: (token: string) => void;
+  authState: AuthState | null;
+  setAuthState: (auth: AuthState | null) => void;
+  login: (auth: AuthState) => void;
+  logout: () => void;
+  isAuthenticated: boolean;
   showInbox: boolean;
   setShowInbox: (show: boolean) => void;
   unreadSessionIds: string[];
   setUnreadSessionIds: React.Dispatch<React.SetStateAction<string[]>>;
-  authState: AuthState | null;
-  login: (auth: AuthState) => void;
-  logout: () => void;
-  isAuthenticated: boolean;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-// Initial personas for local state (will be replaced by custom creation)
-export const personas: Persona[] = [];
-
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [selectedPersona, setSelectedPersona] = useState<Persona | null>(() => {
-    const stored = localStorage.getItem('selectedPersona');
-    const parsed = stored ? JSON.parse(stored) : null;
-    console.log('Initialized selectedPersona from storage:', parsed);
-    return parsed;
+    try {
+      const stored = localStorage.getItem('selectedPersona');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
   });
-  const [isSceneActive, setIsSceneActive] = useState<boolean>(() => {
-    return localStorage.getItem('isSceneActive') === 'true';
-  });
-
-  const updateSceneActive = (active: boolean) => {
-    setIsSceneActive(active);
-    localStorage.setItem('isSceneActive', String(active));
-  };
-
+  const [isSceneActive, setIsSceneActive] = useState(false);
   const [currentYell, setCurrentYell] = useState<YellMessage | null>(null);
   const [chatRequests, setChatRequests] = useState<ChatRequest[]>([]);
+  const [sentChatRequests, setSentChatRequests] = useState<ChatRequest[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [activeSessions, setActiveSessions] = useState<ChatSession[]>([]);
-  const [currentSceneId, setCurrentSceneId] = useState<string | null>(() => {
-    return localStorage.getItem('currentSceneId');
-  });
-  const [sentRequestSceneIds, setSentRequestSceneIds] = useState<string[]>([]);
-  const [unreadSessionIds, setUnreadSessionIds] = useState<string[]>([]);
+  const [currentSceneId, setCurrentSceneId] = useState<string | null>(null);
   const [mapboxToken, setMapboxToken] = useState('');
-  const [showInbox, setShowInbox] = useState(false);
   const [authState, setAuthState] = useState<AuthState | null>(() => {
-    // Try to restore auth from localStorage
-    const stored = localStorage.getItem('auth');
-    return stored ? JSON.parse(stored) : null;
+    try {
+      const stored = localStorage.getItem('auth');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
   });
+  const [showInbox, setShowInbox] = useState(false);
+  const [unreadSessionIds, setUnreadSessionIds] = useState<string[]>([]);
 
-  const login = (auth: AuthState) => {
+  const login = useCallback((auth: AuthState) => {
     setAuthState(auth);
     localStorage.setItem('auth', JSON.stringify(auth));
-  };
+    localStorage.setItem('accessToken', auth.accessToken);
+  }, []);
 
-  const logout = async () => {
-    // If scene is active, try to stop it in backend before clearing state
-    if (isSceneActive) {
-      try {
-        console.log('🚪 User logging out while live, stopping scene...');
-        await scenesApi.stopScene();
-      } catch (err) {
-        console.error('Failed to stop scene during logout:', err);
-      }
-    }
-
+  const logout = useCallback(() => {
     setAuthState(null);
-    localStorage.removeItem('auth');
-    localStorage.removeItem('isSceneActive');
-    localStorage.removeItem('selectedPersona');
-    localStorage.removeItem('currentSceneId');
     setSelectedPersona(null);
     setIsSceneActive(false);
+    setCurrentYell(null);
+    setChatRequests([]);
+    setSentChatRequests([]);
+    setActiveChatId(null);
+    setActiveSessions([]);
     setCurrentSceneId(null);
-    setSentRequestSceneIds([]);
-  };
+    setShowInbox(false);
+    setUnreadSessionIds([]);
+    // Clear local storage if needed
+    localStorage.removeItem('auth');
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('selectedPersona');
+  }, []);
 
   return (
     <AppContext.Provider
@@ -136,7 +126,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         selectedPersona,
         setSelectedPersona,
         isSceneActive,
-        setIsSceneActive: updateSceneActive,
+        setIsSceneActive,
         currentYell,
         setCurrentYell,
         chatRequests,
@@ -146,23 +136,20 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         activeSessions,
         setActiveSessions,
         currentSceneId,
-        setCurrentSceneId: (id: string | null) => {
-          setCurrentSceneId(id);
-          if (id) localStorage.setItem('currentSceneId', id);
-          else localStorage.removeItem('currentSceneId');
-        },
-        sentRequestSceneIds,
-        setSentRequestSceneIds,
-        unreadSessionIds,
-        setUnreadSessionIds,
+        setCurrentSceneId,
+        sentChatRequests,
+        setSentChatRequests,
         mapboxToken,
         setMapboxToken,
-        showInbox,
-        setShowInbox,
         authState,
+        setAuthState,
         login,
         logout,
         isAuthenticated: !!authState,
+        showInbox,
+        setShowInbox,
+        unreadSessionIds,
+        setUnreadSessionIds
       }}
     >
       {children}

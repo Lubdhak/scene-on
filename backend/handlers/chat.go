@@ -413,15 +413,16 @@ func RejectChatRequest(wsHub *websocket.Hub) gin.HandlerFunc {
 			return
 		}
 
-		// Get user's active scene
+		// Get user's active scene and persona name
 		var userSceneID uuid.UUID
+		var personaName string
 		err = config.DB.QueryRow(
-			`SELECT s.id FROM scenes s
+			`SELECT s.id, p.name FROM scenes s
 			 JOIN personas p ON s.persona_id = p.id
 			 WHERE p.user_id = $1 AND s.is_active = true AND s.expires_at > NOW()
 			 ORDER BY s.started_at DESC LIMIT 1`,
 			userID,
-		).Scan(&userSceneID)
+		).Scan(&userSceneID, &personaName)
 
 		if err == sql.ErrNoRows {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "No active scene found"})
@@ -479,7 +480,8 @@ func RejectChatRequest(wsHub *websocket.Hub) gin.HandlerFunc {
 			Message: websocket.Message{
 				Type: "chat.request.rejected",
 				Data: map[string]interface{}{
-					"request_id": reqUUID.String(),
+					"request_id":   reqUUID.String(),
+					"rejecter_name": personaName,
 				},
 			},
 		}

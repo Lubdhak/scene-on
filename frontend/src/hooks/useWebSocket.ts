@@ -44,6 +44,7 @@ export const useWebSocket = (sceneId?: string | null) => {
             ws.current.onmessage = (event) => {
                 try {
                     const message: WSMessage = JSON.parse(event.data);
+                    console.log('📥 WS Message:', message.type, message.data); // Debug log
                     const messageHandlers = handlers.current.get(message.type);
                     if (messageHandlers) {
                         messageHandlers.forEach(handler => handler(message.data));

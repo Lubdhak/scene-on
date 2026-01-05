@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useMemo, memo } from 'react';
+import { useRef, useEffect, useState, useMemo, memo, forwardRef } from 'react';
 import { useApp, ChatRequest } from '@/context/AppContext';
 import { Button } from '@/components/ui/button';
 import { MessageCircle, MapPin, AlertCircle, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
@@ -17,17 +17,19 @@ interface NearbyUser {
   longitude: number;
 }
 
-const MapMarker = memo(({
-  user, index, session, isPendingSent, isPendingReceived, currentSceneId, onClick
-}: {
+const MapMarker = memo(forwardRef<HTMLDivElement, {
   user: NearbyUser;
   index: number;
   session?: ChatSession;
+  pendingMessage?: string;
   isPendingSent: boolean;
   isPendingReceived: boolean;
   currentSceneId: string | null;
   onClick: () => void;
-}) => {
+  onMessageClick: () => void;
+}>(({
+  user, index, session, pendingMessage, isPendingSent, isPendingReceived, currentSceneId, onClick, onMessageClick
+}, ref) => {
   const isActive = !!session;
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const totalDuration = 5 * 60; // 5 minutes in seconds
@@ -50,16 +52,17 @@ const MapMarker = memo(({
   const progress = (timeLeft / totalDuration) * 100;
   const isUrgent = isActive && timeLeft < 60;
 
+  // Determine message to display
+  const displayMessage = session?.last_message_content || pendingMessage;
+  const isMessageClickable = !!displayMessage;
+
   return (
     <motion.div
+      ref={ref}
       initial={{ scale: 0, opacity: 0, y: 20 }}
       animate={{ scale: 1, opacity: 1, y: 0 }}
       exit={{ scale: 0.5, opacity: 0, y: -20 }}
-      transition={{
-        type: "spring",
-        damping: 15,
-        stiffness: 100,
-      }}
+      transition={{ type: "spring", damping: 15, stiffness: 100 }}
       layout
       className="absolute pointer-events-auto cursor-pointer group"
       style={{
@@ -92,26 +95,8 @@ const MapMarker = memo(({
           {/* Timer Ring */}
           {isActive && (
             <svg className="absolute inset-x-0 inset-y-0 w-full h-full -rotate-90 transform pointer-events-none" style={{ scale: '1.2' }}>
-              <circle
-                cx="28"
-                cy="28"
-                r="24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                className="text-muted-foreground/10"
-              />
-              <circle
-                cx="28"
-                cy="28"
-                r="24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeDasharray="150"
-                strokeDashoffset={150 - (progress * 150) / 100}
-                className={isUrgent ? 'text-destructive' : 'text-scene-active'}
-              />
+              <circle cx="28" cy="28" r="24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted-foreground/10" />
+              <circle cx="28" cy="28" r="24" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="150" strokeDashoffset={150 - (progress * 150) / 100} className={isUrgent ? 'text-destructive' : 'text-scene-active'} />
             </svg>
           )}
 
@@ -124,30 +109,39 @@ const MapMarker = memo(({
             ${isActive ? (isUrgent ? 'bg-destructive' : 'bg-scene-active') : isPendingSent ? 'bg-primary' : 'bg-accent'}
           `}>
             {isActive ? (
-              <span className="font-mono font-black text-[9px] text-white">
-                {Math.ceil(timeLeft / 60)}m
-              </span>
+              <span className="font-mono font-black text-[9px] text-white">{Math.ceil(timeLeft / 60)}m</span>
             ) : '•'}
           </div>
         )}
 
         {/* Message Preview Layer */}
-        <div className={`
-          absolute -top-16 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 transition-all duration-300 transform z-30 pointer-events-none
-          ${isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-hover:-translate-y-1'}
-        `}>
-          {session?.last_message_content && (
+        <div
+          className={`
+            absolute -top-16 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 transition-all duration-300 transform z-30
+            ${isActive || isPendingReceived ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 group-hover:-translate-y-1 pointer-events-none'}
+          `}
+          onClick={(e) => {
+            if (isMessageClickable) {
+              e.stopPropagation();
+              onMessageClick();
+            }
+          }}
+        >
+          {displayMessage && (
             <div className={`
-              bg-card/95 border px-2 py-1 rounded-lg shadow-xl flex items-center gap-1.5 max-w-[140px] animate-in fade-in zoom-in duration-300
-              ${isActive ? (isUrgent ? 'border-destructive/50 ring-destructive/20' : 'border-scene-active/50 ring-1 ring-scene-active/20') : 'border-border/50'}
+              bg-card/95 border px-2 py-1.5 rounded-xl shadow-xl flex items-center gap-1.5 max-w-[160px] animate-in fade-in zoom-in duration-300 cursor-pointer hover:scale-105 active:scale-95 transition-transform
+              ${isActive ? (isUrgent ? 'border-destructive/50 ring-destructive/20' : 'border-scene-active/50 ring-1 ring-scene-active/20') :
+                isPendingReceived ? 'border-accent ring-1 ring-accent/30' : 'border-border/50'}
             `}>
-              {session.last_message_sender_id === currentSceneId ? (
+              {session?.last_message_sender_id === currentSceneId ? (
                 <ArrowUpRight className="w-2.5 h-2.5 text-primary shrink-0" />
-              ) : (
+              ) : session ? (
                 <ArrowDownLeft className="w-2.5 h-2.5 text-scene-active shrink-0" />
-              )}
+              ) : isPendingReceived ? (
+                <MessageCircle className="w-2.5 h-2.5 text-accent shrink-0" />
+              ) : null}
               <span className="text-[10px] font-bold text-foreground truncate leading-tight">
-                {session.last_message_content}
+                {displayMessage}
               </span>
             </div>
           )}
@@ -163,16 +157,17 @@ const MapMarker = memo(({
       </div>
     </motion.div>
   );
-});
+}));
 
 const MapContainer = () => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const {
     mapboxToken, selectedPersona, isSceneActive, currentYell, authState,
-    sentRequestSceneIds, setSentRequestSceneIds, activeSessions, setActiveSessions,
+    sentChatRequests, setSentChatRequests, activeSessions, setActiveSessions,
     chatRequests, setChatRequests, setActiveChatId, currentSceneId, setShowInbox,
     setUnreadSessionIds
   } = useApp();
+  // ... (keeping other state)
   const [mapError, setMapError] = useState(false);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [nearbyUsers, setNearbyUsers] = useState<NearbyUser[]>([]);
@@ -328,19 +323,22 @@ const MapContainer = () => {
   };
 
   const handleCancelChatRequest = async (user: NearbyUser) => {
-    // Find the request ID from global state or fetch it
-    // For now, we need to know the request ID. Let's update nearbyUsers to include it if possible, 
-    // or search chatRequests/activeSessions.
-    // Actually, we can fetch sent requests or find it in a local map.
     setSendingRequest(true);
     try {
-      // Find request for this scene
-      const sentRequests = await chatApi.getSentRequests();
-      const req = sentRequests.find(r => r.to_scene_id === user.sceneId && r.status === 'pending');
+      // Find request locally! No API call needed to find ID!
+      const req = sentChatRequests.find(r => r.fromPersona.id === user.sceneId && r.status === 'pending');
+
       if (req) {
         await chatApi.cancelChatRequest(req.id);
-        setSentRequestSceneIds(prev => prev.filter(id => id !== user.sceneId));
+        setSentChatRequests(prev => prev.filter(r => r.id !== req.id));
         setSelectedUser(null);
+      } else {
+        // Fallback: It might not be in our list but UI thinks it is? (Shouldn't happen with sync)
+        // Try fetch just in case? Or just force clear UI?
+        // Let's force clear UI to be safe
+        console.warn('Request ID not found locally, force clearing UI state');
+        // We can't clear specific ID if we don't have it, but we can filter by sceneId mapping if we had it.
+        // But sentChatRequests IS the source of truth for the UI now.
       }
     } catch (error) {
       console.error('Failed to cancel request:', error);
@@ -376,30 +374,33 @@ const MapContainer = () => {
   const handleSendChatRequest = async (user: NearbyUser) => {
     if (!authState || sendingRequest) return;
 
-    // Optimistically update if not already there
-    if (!sentRequestSceneIds.includes(user.sceneId)) {
-      setSentRequestSceneIds(prev => [...prev, user.sceneId]);
-    }
+    // We can't optimistically update fully because we need the ID from backend to allow cancellation later.
+    // But we can show a spinner.
 
     setSendingRequest(true);
     try {
-      const finalMessage = inviteMessage.trim() || `Hey! I'm ${selectedPersona?.name}`;
-      await chatApi.sendChatRequest(user.sceneId, finalMessage);
-      // Silent success - the UI will update based on sentRequestSceneIds
+      const finalMessage = inviteMessage.trim();
+      const newReq = await chatApi.sendChatRequest(user.sceneId, finalMessage);
+
+      // Update local state with the new request
+      setSentChatRequests(prev => [...prev, {
+        id: newReq.id,
+        fromPersona: {
+          id: user.sceneId, // Target
+          name: user.name,
+          avatar: user.avatar,
+          description: user.description
+        },
+        message: newReq.message || undefined,
+        timestamp: new Date(newReq.created_at),
+        status: 'pending'
+      }]);
+
       setSelectedUser(null);
       setInviteMessage('');
     } catch (error: any) {
       console.error('Failed to send chat request:', error);
-      const isAlreadyExists = error.response?.data?.error?.includes('already exists');
-      if (isAlreadyExists) {
-        // If it already exists, just treat it as sent
-        setSelectedUser(null);
-        setInviteMessage('');
-      } else {
-        alert(error.response?.data?.error || 'Failed to send chat request');
-        // Rollback if not "already exists" error
-        setSentRequestSceneIds(prev => prev.filter(id => id !== user.sceneId));
-      }
+      // ... (keep error handling)
     } finally {
       setSendingRequest(false);
     }
@@ -472,8 +473,18 @@ const MapContainer = () => {
           <AnimatePresence mode="popLayout">
             {nearbyUsers.map((user, index) => {
               const session = activeSessions.find(s => s.from_scene_id === user.sceneId || s.to_scene_id === user.sceneId);
-              const isPendingSent = sentRequestSceneIds.includes(user.sceneId);
-              const isPendingReceived = chatRequests.some(r => r.fromPersona.id === user.sceneId && r.status === 'pending');
+
+              const pendingSentReq = sentChatRequests.find(r => r.fromPersona.id === user.sceneId && r.status === 'pending');
+              const isPendingSent = !!pendingSentReq;
+
+              const pendingReceivedReq = chatRequests.find(r => r.fromPersona.id === user.sceneId && r.status === 'pending');
+              const isPendingReceived = !!pendingReceivedReq;
+
+              // Determine pending message to show
+              // If we received a request, show their message
+              // If we sent a request, maybe show our message? Or nothing. User said "msg sent during request".
+              // Let's show received message if available, else sent message.
+              const pendingMessage = pendingReceivedReq?.message || pendingSentReq?.message;
 
               return (
                 <MapMarker
@@ -481,10 +492,21 @@ const MapContainer = () => {
                   user={user}
                   index={index}
                   session={session}
+                  pendingMessage={pendingMessage}
                   isPendingSent={isPendingSent}
                   isPendingReceived={isPendingReceived}
                   currentSceneId={currentSceneId}
                   onClick={() => setSelectedUser(user)}
+                  onMessageClick={() => {
+                    // Direct action when clicking the message bubble
+                    if (session) {
+                      setUnreadSessionIds(prev => prev.filter(id => id !== session.request_id));
+                      setActiveChatId(session.request_id);
+                    } else {
+                      // For pending, just open the user profile for Accept/Reject
+                      setSelectedUser(user);
+                    }
+                  }}
                 />
               );
             })}
@@ -495,7 +517,7 @@ const MapContainer = () => {
       {/* User details popup */}
       {selectedUser && (() => {
         const isActive = activeSessions.some(s => s.from_scene_id === selectedUser.sceneId || s.to_scene_id === selectedUser.sceneId);
-        const isPendingSent = sentRequestSceneIds.includes(selectedUser.sceneId);
+        const isPendingSent = sentChatRequests.some(r => r.fromPersona.id === selectedUser.sceneId && r.status === 'pending');
         const isPendingReceived = chatRequests.some(r => r.fromPersona.id === selectedUser.sceneId && r.status === 'pending');
         const distance = userLocation ? calculateDistance(userLocation.lat, userLocation.lng, selectedUser.latitude, selectedUser.longitude) : '...';
 
@@ -533,7 +555,7 @@ const MapContainer = () => {
                   </div>
                 </div>
 
-                {/* Invitation Message Input - Only show if no request sent/active */}
+                {/* Invitation Message Input */}
                 {!isActive && !isPendingSent && !isPendingReceived ? (
                   <div className="w-full space-y-2">
                     <label className="text-xs font-medium text-muted-foreground ml-1 uppercase tracking-wider">

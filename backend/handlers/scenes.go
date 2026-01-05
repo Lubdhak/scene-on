@@ -50,6 +50,15 @@ func StartScene(wsHub *websocket.Hub) gin.HandlerFunc {
 			return
 		}
 
+
+		// Check if persona exists (it might have been deleted by ephemeral cleanup)
+		var exists bool
+		err = config.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM personas WHERE id = $1)", personaID).Scan(&exists)
+		if err != nil || !exists {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Persona not found. Please recreate your identity.", "code": "PERSONA_NOT_FOUND"})
+			return
+		}
+
 		// Check if user already has an active scene
 		var scene models.Scene
 		err = config.DB.QueryRow(
@@ -190,13 +199,19 @@ func StopScene(wsHub *websocket.Hub) gin.HandlerFunc {
 			},
 		}
 
-		c.JSON(http.StatusOK, gin.H{"message": "Scene stopped successfully"})
+	// Delete the persona itself (Strict ephemeral policy)
+	_, err = config.DB.Exec(`DELETE FROM personas WHERE user_id = $1`, userID)
+	if err != nil {
+		log.Printf("Warning: Failed to delete persona for user %s: %v", userID, err)
 	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Scene stopped and persona deleted"})
+}
 }
 
-// CleanupActiveScenes marks all scenes as inactive on startup
+// CleanupActiveScenes marks all scenes as inactive on startup AND deletes all personas
 func CleanupActiveScenes() {
-	log.Println("🧹 Cleaning up active scenes on startup...")
+	log.Println("🧹 Cleaning up active scenes & personas on startup...")
 	
 	// Mark all scenes inactive
 	res, err := config.DB.Exec(`UPDATE scenes SET is_active = false WHERE is_active = true`)
@@ -205,6 +220,15 @@ func CleanupActiveScenes() {
 	} else {
 		count, _ := res.RowsAffected()
 		log.Printf("✓ Marked %d scenes as inactive", count)
+	}
+
+	// Delete ALL personas (Ephemeral: start fresh on server restart)
+	resPer, err := config.DB.Exec(`DELETE FROM personas`)
+	if err != nil {
+		log.Printf("❌ Failed to cleanup database personas: %v", err)
+	} else {
+		count, _ := resPer.RowsAffected()
+		log.Printf("✓ Deleted %d personas (ephemeral storage)", count)
 	}
 
 	// Redis cleanup could be more complex depending on key structure, 

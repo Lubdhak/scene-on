@@ -50,6 +50,28 @@ func GetOrCreatePersona(c *gin.Context) {
 		return
 	}
 
+	// Check uniqueness of persona name across ALL users (ignore case maybe? let's stick to exact for now or ILIKE)
+	// We use ILIKE for case-insensitive uniqueness to avoid "Neo" vs "neo" confusion
+	var nameTaken bool
+	err = config.DB.QueryRow(
+		`SELECT EXISTS(SELECT 1 FROM personas WHERE name ILIKE $1 AND id != $2)`,
+		req.Name, userID,
+	).Scan(&nameTaken)
+
+	if err != nil {
+		log.Printf("❌ Failed to check name uniqueness: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error checking name"})
+		return
+	}
+
+	if nameTaken {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": "Persona name '" + req.Name + "' is already taken. Please choose another.",
+			"code":  "NAME_TAKEN",
+		})
+		return
+	}
+
 	// Check if user already has a persona (using userID as personaID)
 	var persona models.Persona
 	err = config.DB.QueryRow(

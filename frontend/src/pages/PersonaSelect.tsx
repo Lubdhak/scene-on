@@ -6,12 +6,14 @@ import { Button } from '@/components/ui/button';
 import { ArrowRight, Sparkles, User, MessageSquare, Info, RefreshCw } from 'lucide-react';
 import axios from 'axios';
 import { scenesApi } from '@/api/scenes';
+import { useToast } from '@/hooks/use-toast';
 
 const API_BASE_URL = 'http://localhost:8080/api/v1';
 
 const AVATARS = ['🌟', '⚔️', '🔮', '🛡️', '🛰️', '🎭', '🦋', '🔥', '⚡', '🌌', '🐉', '🏔️'];
 
 const PersonaSelect = () => {
+  const { toast } = useToast();
   const navigate = useNavigate();
   const { selectedPersona, setSelectedPersona, authState, isSceneActive } = useApp();
   const [isCreating, setIsCreating] = useState(false);
@@ -20,6 +22,7 @@ const PersonaSelect = () => {
   const [name, setName] = useState(selectedPersona?.name || '');
   const [description, setDescription] = useState(selectedPersona?.description || '');
   const [selectedAvatar, setSelectedAvatar] = useState(selectedPersona?.avatar || AVATARS[0]);
+  const [nameError, setNameError] = useState('');
 
   const handleContinue = async () => {
     if (!name || !authState) return;
@@ -72,7 +75,24 @@ const PersonaSelect = () => {
       navigate('/map');
     } catch (error: any) {
       console.error('PERSONA CREATION ERROR:', error);
-      alert(error.response?.data?.error || 'Failed to update persona');
+
+      const errorMessage = error.response?.data?.error || 'Failed to update persona';
+      const errorCode = error.response?.data?.code;
+
+      if (errorCode === 'NAME_TAKEN') {
+        setNameError(errorMessage);
+        toast({
+          title: "Name Taken",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsCreating(false);
     }
@@ -144,10 +164,22 @@ const PersonaSelect = () => {
                 <input
                   type="text"
                   value={name}
-                  onChange={(e) => setName(e.target.value.slice(0, 10))}
+                  onChange={(e) => {
+                    setName(e.target.value.slice(0, 10));
+                    setNameError('');
+                  }}
                   placeholder="e.g. Neon Ghost"
-                  className="w-full bg-background/50 border border-border/50 px-5 py-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground"
+                  className={`w-full bg-background/50 border px-5 py-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground transition-all ${nameError ? 'border-destructive/80 focus:ring-destructive/30' : 'border-border/50'}`}
                 />
+                {nameError && (
+                  <motion.p
+                    initial={{ opacity: 0, y: -5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="absolute left-1 -bottom-5 text-[10px] font-medium text-destructive mt-1 ml-1"
+                  >
+                    ❌ {nameError}
+                  </motion.p>
+                )}
               </div>
             </div>
 

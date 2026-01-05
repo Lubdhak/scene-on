@@ -5,7 +5,7 @@ import { Power } from 'lucide-react';
 import { scenesApi } from '@/api/scenes';
 
 const SceneToggle = () => {
-  const { isSceneActive, setIsSceneActive, setCurrentYell, setChatRequests, setCurrentSceneId, setSentRequestSceneIds, selectedPersona, setActiveChatId, setShowInbox } = useApp();
+  const { isSceneActive, setIsSceneActive, setCurrentYell, setChatRequests, setCurrentSceneId, setSentChatRequests, selectedPersona, setSelectedPersona, setActiveChatId, setShowInbox } = useApp();
   const [isLoading, setIsLoading] = useState(false);
 
   const handleToggle = async () => {
@@ -18,7 +18,7 @@ const SceneToggle = () => {
         setCurrentSceneId(null);
         setCurrentYell(null);
         setChatRequests([]);
-        setSentRequestSceneIds([]);
+        setSentChatRequests([]);
         setActiveChatId(null);
         setShowInbox(false);
       } catch (error) {
@@ -65,6 +65,16 @@ const SceneToggle = () => {
                 setCurrentSceneId(scene.id);
               } catch (error: any) {
                 console.error('Failed to start scene:', error);
+
+                // Handle missing persona (ephemeral cleanup)
+                if (error.response?.data?.code === 'PERSONA_NOT_FOUND' || error.response?.status === 404) {
+                  alert('Session expired. Please recreate your identity.');
+                  setSelectedPersona(null);
+                  localStorage.removeItem('selectedPersona');
+                  window.location.reload(); // Force reload to go back to persona selection
+                  return;
+                }
+
                 console.error('Error response:', error.response?.data);
                 alert(error.response?.data?.error || 'Failed to start scene');
               } finally {
@@ -80,6 +90,15 @@ const SceneToggle = () => {
                 })
                 .catch((err: any) => {
                   console.error('Failed to start scene:', err);
+
+                  if (err.response?.data?.code === 'PERSONA_NOT_FOUND' || err.response?.status === 404) {
+                    alert('Session expired. Please recreate your identity.');
+                    setSelectedPersona(null);
+                    localStorage.removeItem('selectedPersona');
+                    window.location.reload();
+                    return;
+                  }
+
                   alert(err.response?.data?.error || 'Failed to start scene');
                 })
                 .finally(() => {
@@ -95,6 +114,15 @@ const SceneToggle = () => {
         }
       } catch (error: any) {
         console.error('Failed to start scene:', error);
+
+        if (error.response?.data?.code === 'PERSONA_NOT_FOUND' || error.response?.status === 404) {
+          alert('Session expired. Please recreate your identity.');
+          setSelectedPersona(null);
+          localStorage.removeItem('selectedPersona');
+          window.location.reload();
+          return;
+        }
+
         alert(error.response?.data?.error || 'Failed to start scene');
         setIsLoading(false);
       }
