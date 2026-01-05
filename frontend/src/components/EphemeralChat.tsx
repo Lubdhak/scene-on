@@ -14,6 +14,7 @@ const EphemeralChat = () => {
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const [expiresAt, setExpiresAt] = useState<Date | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const { subscribe } = useWebSocket(currentSceneId);
 
   // Find the active session using request_id
@@ -88,6 +89,13 @@ const EphemeralChat = () => {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeChatId]);
+
+  // Auto-focus input when chat opens
+  useEffect(() => {
+    if (activeChatId && inputRef.current) {
+      inputRef.current.focus();
+    }
   }, [activeChatId]);
 
   // Countdown timer synced with backend expiration
@@ -246,6 +254,7 @@ const EphemeralChat = () => {
       <div className="p-4 border-t border-border bg-card">
         <div className="flex items-center gap-2">
           <Input
+            ref={inputRef}
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}

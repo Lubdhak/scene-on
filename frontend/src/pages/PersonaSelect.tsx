@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useApp, Persona } from '@/context/AppContext';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, Sparkles, User, MessageSquare, Info, RefreshCw } from 'lucide-react';
+import { ArrowRight, Sparkles, User, MessageSquare, Info, RefreshCw, ArrowLeft, X } from 'lucide-react';
 import axios from 'axios';
 import { scenesApi } from '@/api/scenes';
 import { useToast } from '@/hooks/use-toast';
@@ -23,6 +23,18 @@ const PersonaSelect = () => {
   const [description, setDescription] = useState(selectedPersona?.description || '');
   const [selectedAvatar, setSelectedAvatar] = useState(selectedPersona?.avatar || AVATARS[0]);
   const [nameError, setNameError] = useState('');
+
+  // ESC key handler to close/go back
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && selectedPersona) {
+        navigate('/map');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedPersona, navigate]);
 
   const handleContinue = async () => {
     if (!name || !authState) return;
@@ -102,6 +114,29 @@ const PersonaSelect = () => {
     <div className="min-h-screen bg-background bg-noise relative overflow-hidden flex items-center justify-center p-6">
       {/* Ambient effects */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-secondary/10 rounded-full blur-[150px] pointer-events-none" />
+
+      {/* Back button and close button if persona exists */}
+      {selectedPersona && (
+        <>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate('/map')}
+            className="absolute top-6 left-6 z-20"
+          >
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Map
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate('/map')}
+            className="absolute top-6 right-6 z-20 w-10 h-10 rounded-full hover:bg-destructive/20 hover:text-destructive"
+          >
+            <X className="w-5 h-5" />
+          </Button>
+        </>
+      )}
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}
