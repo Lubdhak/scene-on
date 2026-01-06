@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+
 	"scene-on/backend/config"
 	"scene-on/backend/handlers"
 	"scene-on/backend/routes"
@@ -16,70 +17,82 @@ import (
 
 var wsHub *websocket.Hub
 
+func mustEnv(key string) string {
+	val := os.Getenv(key)
+	if val == "" {
+		log.Fatalf("Missing required environment variable: %s", key)
+	}
+	return val
+}
+
 func main() {
-	// Load environment variables
-	if err := godotenv.Load(); err != nil {
-		log.Println("Warning: .env file not found, using system environment variables")
+	// Load .env ONLY for local development
+	if os.Getenv("RENDER") == "" {
+		if err := godotenv.Load(); err != nil {
+			log.Println("Warning: .env file not found, using system environment variables")
+		}
 	}
 
-	// Initialize database
+	// ---- REQUIRED ENV CHECKS ----
+	mustEnv("DATABASE_URL")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	// ---- DATABASE ----
 	if err := config.InitDatabase(); err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 	defer config.CloseDatabase()
 
-	// Initialize Google OAuth
+	// ---- OAUTH ----
 	handlers.InitGoogleOAuth()
 
-	// Cleanup stale scenes on boot
+	// ---- CLEANUP ----
 	handlers.CleanupActiveScenes()
 
-	// Initialize WebSocket hub
+	// ---- WEBSOCKETS ----
 	wsHub = websocket.NewHub()
 	go wsHub.Run()
 
-	// Start chat cleanup worker
 	go handlers.StartChatCleanupWorker(wsHub)
 
-	// Set Gin mode
+	// ---- GIN MODE ----
 	ginMode := os.Getenv("GIN_MODE")
 	if ginMode == "" {
-		ginMode = "release" // production default
+		ginMode = gin.ReleaseMode
 	}
 	gin.SetMode(ginMode)
 
-	router := gin.Default()
+	router := gin.New()
+	router.Use(gin.Logger(), gin.Recovery())
 
-	// Configure CORS
-	corsConfig := cors.DefaultConfig()
-	corsConfig.AllowOrigins = []string{
-		"https://your-frontend.vercel.app", // Production frontend
-		"http://localhost:5173",            // Dev
+	// ---- CORS ----
+	corsConfig := cors.Config{
+		AllowOrigins: []string{
+			"https://your-frontend.vercel.app",
+			"http://localhost:5173",
+		},
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		AllowCredentials: true,
 	}
-	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
-	corsConfig.AllowHeaders = []string{"Origin", "Content-Type", "Accept", "Authorization"}
-	corsConfig.AllowCredentials = true
 	router.Use(cors.New(corsConfig))
 
-	// Health check endpoint
+	// ---- HEALTH CHECK ----
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
-			"status":  "ok",
-			"message": "Scene-On API is running",
+			"status": "ok",
 		})
 	})
 
-	// Setup routes
+	// ---- ROUTES ----
 	routes.SetupRoutes(router, wsHub)
 
-	// Start server
-	port := os.Getenv("PORT") // Render requires PORT env
-	if port == "" {
-		port = "8080"
-	}
-
-	log.Printf("🚀 Server starting on port %s", port)
+	// ---- START SERVER ----
+	log.Printf("🚀 Scene-On API running on port %s", port)
 	if err := router.Run(":" + port); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+		log.Fatalf("Server failed: %v", err)
 	}
 }
