@@ -6,7 +6,7 @@ import { Zap } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useApp } from '@/context/AppContext';
 
-const API_BASE_URL = 'http://localhost:8080';
+const API_BASE_URL = "https://scene-on.onrender.com"
 
 const Login = () => {
     const navigate = useNavigate();
