@@ -71,7 +71,7 @@ func main() {
 	// ---- CORS ----
 	corsConfig := cors.Config{
 		AllowOrigins: []string{
-			"https://your-frontend.vercel.app",
+			"https://scene-on-puce.vercel.app",
 			"http://localhost:5173",
 		},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
