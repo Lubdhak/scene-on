@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
 	"scene-on/backend/config"
 	"scene-on/backend/handlers"
@@ -70,9 +71,16 @@ func main() {
 
 	// ---- CORS ----
 	corsConfig := cors.Config{
-		AllowOrigins: []string{
-			"https://scene-on-puce.vercel.app",
-			"http://localhost:5173",
+		AllowOriginFunc: func(origin string) bool {
+			// Allow localhost for dev
+			if origin == "http://localhost:5173" {
+				return true
+			}
+			// Allow anything ending with .vercel.app
+			if strings.HasSuffix(origin, ".vercel.app") {
+				return true
+			}
+			return false
 		},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
