@@ -44,7 +44,7 @@ func main() {
 	// Set Gin mode
 	ginMode := os.Getenv("GIN_MODE")
 	if ginMode == "" {
-		ginMode = "debug"
+		ginMode = "release" // production default
 	}
 	gin.SetMode(ginMode)
 
@@ -53,11 +53,8 @@ func main() {
 	// Configure CORS
 	corsConfig := cors.DefaultConfig()
 	corsConfig.AllowOrigins = []string{
-		"http://localhost:5173",
-		"http://localhost:3000",
-		"http://localhost:4200",
-		"http://localhost:8081", // Web frontend
-		// Add your production frontend URL here
+		"https://your-frontend.vercel.app", // Production frontend
+		"http://localhost:5173",            // Dev
 	}
 	corsConfig.AllowMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"}
 	corsConfig.AllowHeaders = []string{"Origin", "Content-Type", "Accept", "Authorization"}
@@ -76,7 +73,7 @@ func main() {
 	routes.SetupRoutes(router, wsHub)
 
 	// Start server
-	port := os.Getenv("SERVER_PORT")
+	port := os.Getenv("PORT") // Render requires PORT env
 	if port == "" {
 		port = "8080"
 	}
