@@ -41,7 +41,7 @@ const MapTokenInput = () => {
       const { latitude, longitude, accuracy } = position.coords;
 			
       // Send location to backend
-      const response = await fetch(`https://scene-on.onrender.com/location/update`, {
+      const response = await fetch(`https://scene-on.onrender.com/api/v1/location/update`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
