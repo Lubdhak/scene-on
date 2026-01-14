@@ -44,7 +44,6 @@ app.*.map.json
 /android/app/release
 
 # Environment
-.env
 
 # Generated files
 *.g.dart

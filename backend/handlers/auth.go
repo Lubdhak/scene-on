@@ -332,9 +332,9 @@ func GoogleCallback(c *gin.Context) {
 	// Redirect to frontend with token
 	// Build redirect URL with token as query parameter
 	frontendURL := os.Getenv("FRONTEND_URL")
-	if frontendURL == "" {
-		frontendURL = "http://localhost:5173"
-	}
+	// if frontendURL == "" {
+	// 	frontendURL = "http://localhost:5173"
+	// }
 	
 	redirectURL := fmt.Sprintf("%s/auth/callback?token=%s&user_id=%s&email=%s", 
 		frontendURL, jwtToken, user.ID.String(), user.Email)

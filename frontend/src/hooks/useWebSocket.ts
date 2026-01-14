@@ -9,11 +9,11 @@ interface WSMessage {
 type MessageHandler = (data: Record<string, any>) => void;
 
 const getWsUrl = () => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // If we're in development (Vite), the backend might be on 8080.
-    // In production, it's likely on the same host.
-    const host = window.location.hostname === 'localhost' ? 'localhost:8080' : window.location.host;
-    return `${protocol}//${host}/ws`;
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+    if (apiUrl.startsWith('https')) {
+        return apiUrl.replace('https', 'wss') + '/ws';
+    }
+    return apiUrl.replace('http', 'ws') + '/ws';
 };
 
 const WS_BASE_URL = getWsUrl();

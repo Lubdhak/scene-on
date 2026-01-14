@@ -30,8 +30,12 @@ func main() {
 	// Load .env ONLY for local development
 	if os.Getenv("RENDER") == "" {
 		if err := godotenv.Load(); err != nil {
-			log.Println("Warning: .env file not found, using system environment variables")
+			log.Println("⚠️  Warning: .env file not found, using system environment variables")
+		} else {
+			log.Println("📄 Loaded .env file successfully")
 		}
+	} else {
+		log.Println("☁️  Running in RENDER environment (using system env vars)")
 	}
 
 	// ---- REQUIRED ENV CHECKS ----
@@ -72,14 +76,15 @@ func main() {
 	// ---- CORS ----
 	corsConfig := cors.Config{
 		AllowOriginFunc: func(origin string) bool {
-			// Allow localhost for dev
-			if origin == "http://localhost:5173" {
+			// Allow localhost for dev (any port)
+			if strings.HasPrefix(origin, "http://localhost") || strings.HasPrefix(origin, "http://127.0.0.1") {
 				return true
 			}
 			// Allow anything ending with .vercel.app
 			if strings.HasSuffix(origin, ".vercel.app") {
 				return true
 			}
+			log.Printf("⛔ CORS blocked origin: %s", origin)
 			return false
 		},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},

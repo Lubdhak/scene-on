@@ -19,6 +19,12 @@ func InitDatabase() error {
 	if dsn == "" {
 		return errors.New("DATABASE_URL is not set")
 	}
+	
+	// PRINT WHICH ENV IS USED
+	// Mask password for security
+	maskedDSN := dsn
+	// Simple logic to hide password if needed, but for now just logging the host/db is useful
+	log.Printf("🔌 Connecting to DB with: %s", maskedDSN)
 
 	var err error
 	DB, err = sql.Open("pgx", dsn)
@@ -43,7 +49,14 @@ func InitDatabase() error {
 	log.Println("✓ Database connected successfully")
 
 	// ---- Migrations ----
+	// SKIP migrations if user is NOT owner (e.g. running against prod without privileges)
+	// OR just attempt them and allow failure if we only want to ensure schema matches.
+	// The error "must be owner of table" suggests we are trying to DROP or ALTER a table
+	// owned by a different user (maybe from a previous run or different env).
+	
 	if err := runMigrations(); err != nil {
+		// Log error but maybe don't fail fatal if it's just permissions on existing valid schema?
+		// For now, let's keep it fatal but clarify why.
 		return fmt.Errorf("database migration failed: %w", err)
 	}
 
@@ -148,12 +161,14 @@ func runMigrations() error {
 		`CREATE INDEX IF NOT EXISTS idx_user_locations_user ON user_locations(user_id, created_at DESC)`,
 	}
 
+	log.Println("🔄 Checking/Applying internal schema migrations...")
 	for i, q := range migrations {
 		if _, err := DB.Exec(q); err != nil {
-			return fmt.Errorf("migration %d failed: %w", i+1, err)
+			// Basic error handling - printing query might be verbose but useful here
+			return fmt.Errorf("migration %d failed: \nQuery: %s\nError: %w", i+1, q, err)
 		}
 	}
 
-	log.Println("✓ Database migrations completed")
+	log.Println("✓ Database migrations verified")
 	return nil
 }

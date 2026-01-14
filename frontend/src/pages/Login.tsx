@@ -6,7 +6,7 @@ import { Zap } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useApp } from '@/context/AppContext';
 
-const API_BASE_URL = "https://scene-on.onrender.com"
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
 
 const Login = () => {
     const navigate = useNavigate();
@@ -20,13 +20,13 @@ const Login = () => {
         try {
             // Get the Google OAuth URL from backend
             const response = await fetch(`${API_BASE_URL}/api/v1/auth/google/login`);
-            
+
             if (!response.ok) {
                 throw new Error('Failed to initiate Google login');
             }
 
             const data = await response.json();
-            
+
             // Redirect to Google OAuth consent screen
             window.location.href = data.url;
         } catch (error) {
