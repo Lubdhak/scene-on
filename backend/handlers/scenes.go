@@ -115,22 +115,21 @@ func StartScene(wsHub *websocket.Hub) gin.HandlerFunc {
 			return
 		}
 
-		// Broadcast scene event to nearby users
-		wsHub.Broadcast <- websocket.BroadcastMessage{
-			Message: websocket.Message{
-				Type: "scene.started", // We can keep "started" for both start and update for simplicity
+		// Broadcast scene event to nearby users using PostGIS (much more efficient)
+		wsHub.BroadcastToNearby(
+			websocket.Message{
+				Type: "scene.started",
 				Data: map[string]interface{}{
 					"scene_id":  scene.ID.String(),
 					"latitude":  scene.Latitude,
 					"longitude": scene.Longitude,
 				},
 			},
-			Location: &websocket.Location{
-				Latitude:  scene.Latitude,
-				Longitude: scene.Longitude,
-			},
-			Radius: 5000, // 5km radius
-		}
+			scene.Latitude,
+			scene.Longitude,
+			5000, // 5km radius in meters
+			scene.ID,
+		)
 
 		c.JSON(http.StatusCreated, scene)
 	}

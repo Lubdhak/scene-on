@@ -5,6 +5,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"scene-on/backend/config"
 	"sync"
 	"time"
 
@@ -169,6 +170,47 @@ func (h *Hub) sendBroadcast(broadcastMsg BroadcastMessage) {
 		}
 	}
 }
+
+// BroadcastToNearby sends a message to all scenes within a geographic radius using PostGIS.
+// This is much more efficient than the in-memory distance calculations in sendBroadcast.
+func (h *Hub) BroadcastToNearby(msg Message, lat, lon, radiusMeters float64, excludeSceneID uuid.UUID) {
+	// Query PostGIS for nearby active scenes
+	rows, err := config.DB.Query(`
+		SELECT DISTINCT s.id 
+		FROM scenes s
+		WHERE s.is_active = true 
+		  AND s.expires_at > NOW()
+		  AND s.id != $1
+		  AND ST_DWithin(
+		      ST_SetSRID(ST_MakePoint(s.longitude, s.latitude), 4326)::geography,
+		      ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography,
+		      $4
+		  )`,
+		excludeSceneID, lon, lat, radiusMeters,
+	)
+	if err != nil {
+		log.Printf("Failed to query nearby scenes: %v", err)
+		return
+	}
+	defer rows.Close()
+	
+	// Send targeted messages to each nearby scene
+	for rows.Next() {
+		var sceneID uuid.UUID
+		if err := rows.Scan(&sceneID); err == nil {
+			// Use the existing Targeted channel for delivery
+			h.Targeted <- TargetedMessage{
+				TargetSceneID: sceneID,
+				Message:       msg,
+			}
+		}
+	}
+	
+	if err := rows.Err(); err != nil {
+		log.Printf("Error iterating nearby scenes: %v", err)
+	}
+}
+
 
 func (c *Client) ReadPump() {
 	defer func() {

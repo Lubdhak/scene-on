@@ -98,6 +98,22 @@ const EphemeralChat = () => {
     }
   }, [activeChatId]);
 
+  // Handle mobile keyboard - scroll input into view when focused
+  useEffect(() => {
+    const inputElement = inputRef.current;
+    if (!inputElement) return;
+
+    const handleFocus = () => {
+      // Delay to allow keyboard to appear
+      setTimeout(() => {
+        inputElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }, 300);
+    };
+
+    inputElement.addEventListener('focus', handleFocus);
+    return () => inputElement.removeEventListener('focus', handleFocus);
+  }, []);
+
   // Countdown timer synced with backend expiration
   useEffect(() => {
     if (!expiresAt) return;
@@ -229,7 +245,7 @@ const EphemeralChat = () => {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-safe">
         {messages.map((message) => (
           <motion.div
             key={message.id}
@@ -258,6 +274,12 @@ const EphemeralChat = () => {
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+            onFocus={() => {
+              // Additional scroll on focus for mobile
+              setTimeout(() => {
+                inputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }, 100);
+            }}
             placeholder="Type a message..."
             className="flex-1 bg-muted border-border focus:ring-primary"
           />

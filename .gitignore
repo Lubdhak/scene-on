@@ -110,3 +110,10 @@ coverage/
 docs/_build/
 site/
 backend/scene-on
+
+# Environment variables (NEVER commit these!)
+.env
+.env.*
+*.env
+!.env.example
+!.env.template
