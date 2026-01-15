@@ -220,7 +220,7 @@ func GetNearbyScenes(c *gin.Context) {
 
 	// Parse radius (in kilometers)
 	var radiusKm float64
-	if _, err := fmt.Sscanf(radiusStr, "%f", &radiusKm); err != nil || radiusKm <= 0 || radiusKm > 100 {
+	if _, err := fmt.Sscanf(radiusStr, "%f", &radiusKm); err != nil || radiusKm <= 0 || radiusKm > 3000 {
 		radiusKm = 50 // Default to 50km if invalid
 	}
 

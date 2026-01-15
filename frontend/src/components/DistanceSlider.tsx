@@ -31,9 +31,9 @@ export const DistanceSlider = ({ value, onChange, className = '' }: DistanceSlid
   }, [displayValue, value, onChange]);
 
   const getRadiusColor = (km: number) => {
-    if (km <= 25) return 'text-emerald-500';
-    if (km <= 50) return 'text-blue-500';
-    if (km <= 75) return 'text-purple-500';
+    if (km <= 750) return 'text-emerald-500';
+    if (km <= 1500) return 'text-blue-500';
+    if (km <= 2250) return 'text-purple-500';
     return 'text-orange-500';
   };
 
@@ -164,8 +164,8 @@ export const DistanceSlider = ({ value, onChange, className = '' }: DistanceSlid
                 value={[displayValue]}
                 onValueChange={(values) => setDisplayValue(values[0])}
                 min={0}
-                max={100}
-                step={1}
+                max={3000}
+                step={10}
                 className="cursor-pointer"
                 onPointerDown={() => {}}
                 onPointerUp={() => {
