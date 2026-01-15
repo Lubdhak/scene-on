@@ -117,3 +117,4 @@ backend/scene-on
 *.env
 !.env.example
 !.env.template
+env_vars.zip
