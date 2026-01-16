@@ -138,6 +138,13 @@ const PersonaSelect = () => {
         </>
       )}
 
+      {/* Email display */}
+      {authState?.email && (
+        <div className="absolute top-20 right-6 z-20 text-xs text-muted-foreground/60 font-mono">
+          {authState.email}
+        </div>
+      )}
+
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -203,7 +210,6 @@ const PersonaSelect = () => {
                     setName(e.target.value.slice(0, 10));
                     setNameError('');
                   }}
-                  placeholder="e.g. Neon Ghost"
                   className={`w-full bg-background/50 border px-5 py-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground transition-all ${nameError ? 'border-destructive/80 focus:ring-destructive/30' : 'border-border/50'}`}
                 />
                 {nameError && (
@@ -233,7 +239,6 @@ const PersonaSelect = () => {
                   type="text"
                   value={description}
                   onChange={(e) => setDescription(e.target.value.slice(0, 20))}
-                  placeholder="Something about you..."
                   className="w-full bg-background/50 border border-border/50 px-5 py-4 rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/50 text-foreground"
                 />
               </div>
