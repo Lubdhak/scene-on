@@ -4,21 +4,29 @@ import (
 	"log"
 	"scene-on/backend/config"
 	"scene-on/backend/websocket"
-	"time"
 
 	"github.com/google/uuid"
 )
 
-// StartChatCleanupWorker runs a background job to clean up expired chats
-func StartChatCleanupWorker(wsHub *websocket.Hub) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	log.Println("🧹 Chat cleanup worker started")
-
-	for range ticker.C {
-		cleanupExpiredChats(wsHub)
+// RunBootCleanup performs one-time cleanup of expired data during server boot
+func RunBootCleanup(wsHub *websocket.Hub) {
+	log.Println("🧹 Running boot cleanup...")
+	
+	// Mark all active scenes as inactive on startup
+	res, err := config.DB.Exec(`UPDATE scenes SET is_active = false WHERE is_active = true`)
+	if err != nil {
+		log.Printf("❌ Failed to deactivate scenes: %v", err)
+	} else {
+		count, _ := res.RowsAffected()
+		if count > 0 {
+			log.Printf("✓ Marked %d scenes as inactive", count)
+		}
 	}
+	
+	// Clean up expired data
+	cleanupExpiredChats(wsHub)
+	
+	log.Println("✅ Boot cleanup completed")
 }
 
 func cleanupExpiredChats(wsHub *websocket.Hub) {
@@ -84,5 +92,76 @@ func cleanupExpiredChats(wsHub *websocket.Hub) {
 
 	if expiredCount > 0 {
 		log.Printf("✅ Cleaned up %d expired chat(s)", expiredCount)
+	}
+
+	// Clean up expired scenes
+	cleanupExpiredScenes(wsHub)
+
+	// Clean up old chat requests
+	cleanupOldChatRequests()
+
+	// Clean up old user location history (keep last 100 per user)
+	cleanupOldUserLocations()
+}
+
+func cleanupExpiredScenes(wsHub *websocket.Hub) {
+	// Delete expired scenes
+	result, err := config.DB.Exec(
+		`DELETE FROM scenes 
+		 WHERE is_active = true 
+		 AND expires_at < NOW()`,
+	)
+
+	if err != nil {
+		log.Printf("Failed to delete expired scenes: %v", err)
+		return
+	}
+
+	if count, _ := result.RowsAffected(); count > 0 {
+		log.Printf("🗑️  Deleted %d expired scene(s)", count)
+	}
+}
+
+func cleanupOldChatRequests() {
+	// Delete chat requests that are expired, rejected, or old pending ones
+	// Keep accepted ones as they may still be referenced
+	result, err := config.DB.Exec(
+		`DELETE FROM chat_requests 
+		 WHERE (status = 'expired' AND expires_at < NOW() - INTERVAL '1 hour')
+		 OR (status = 'rejected' AND created_at < NOW() - INTERVAL '1 hour')
+		 OR (status = 'pending' AND expires_at < NOW())`,
+	)
+
+	if err != nil {
+		log.Printf("Failed to cleanup old chat requests: %v", err)
+		return
+	}
+
+	if count, _ := result.RowsAffected(); count > 0 {
+		log.Printf("🗑️  Deleted %d old chat request(s)", count)
+	}
+}
+
+func cleanupOldUserLocations() {
+	// Keep only the most recent 100 locations per user
+	result, err := config.DB.Exec(
+		`DELETE FROM user_locations 
+		 WHERE id IN (
+			SELECT id FROM (
+				SELECT id, 
+					ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) as rn
+				FROM user_locations
+			) t
+			WHERE rn > 100
+		 )`,
+	)
+
+	if err != nil {
+		log.Printf("Failed to cleanup old user locations: %v", err)
+		return
+	}
+
+	if count, _ := result.RowsAffected(); count > 0 {
+		log.Printf("🗑️  Deleted %d old user location(s)", count)
 	}
 }

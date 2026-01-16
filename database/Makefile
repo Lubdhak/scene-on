@@ -63,6 +63,12 @@ db-create: db-bootstrap ## Create app DB user and database
 		"GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO $(DB_USER);"
 	@$(PSQL) -U postgres -d $(DB_NAME) -c \
 		"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $(DB_USER);"
+	
+	@echo "Ensuring ownership of all objects belongs to '$(DB_USER)'..."
+	@$(PSQL) -U postgres -d $(DB_NAME) -c \
+		"REASSIGN OWNED BY postgres TO $(DB_USER);" 2>/dev/null || true
+	@$(PSQL) -U postgres -d $(DB_NAME) -c \
+		"ALTER DATABASE $(DB_NAME) OWNER TO $(DB_USER);"
 
 db-postgis: db-create ## Enable PostGIS extension in database
 	@echo "Checking PostGIS availability..."

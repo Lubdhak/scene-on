@@ -1,28 +1,5 @@
 // Scenes API Client
-import axios from 'axios';
-
-const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8080') + '/api/v1';
-
-// Get auth token from localStorage
-const getAuthToken = (): string | null => {
-    const auth = localStorage.getItem('auth');
-    if (!auth) return null;
-    try {
-        const parsed = JSON.parse(auth);
-        return parsed.accessToken;
-    } catch {
-        return null;
-    }
-};
-
-// Create axios instance with auth header
-const createAuthAxios = () => {
-    const token = getAuthToken();
-    return axios.create({
-        baseURL: API_BASE_URL,
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
-};
+import { createAuthAxios } from './axios-config';
 
 export interface Scene {
     id: string;

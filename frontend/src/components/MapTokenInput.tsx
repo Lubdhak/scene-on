@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/context/AppContext';
 import { MapPin, Loader2, CheckCircle2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { locationApi } from '@/api/location';
 
 const MapTokenInput = () => {
   const navigate = useNavigate();
@@ -40,34 +41,23 @@ const MapTokenInput = () => {
 
       const { latitude, longitude, accuracy } = position.coords;
 
-      // Send location to backend
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8080'}/api/v1/location/update`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authState?.accessToken}`,
-        },
-        body: JSON.stringify({
-          latitude,
-          longitude,
-          accuracy,
-        }),
+      // Send location to backend using API client with auth interceptor
+      await locationApi.updateLocation({
+        latitude,
+        longitude,
+        accuracy,
       });
 
-      if (response.ok) {
-        setLocationGranted(true);
-        toast({
-          title: 'Location saved',
-          description: `Coordinates: ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
-        });
+      setLocationGranted(true);
+      toast({
+        title: 'Location saved',
+        description: `Coordinates: ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
+      });
 
-        // Set a placeholder token to enable map view (will be replaced with actual token later)
-        setTimeout(() => {
-          setMapboxToken('placeholder-token');
-        }, 1500);
-      } else {
-        throw new Error('Failed to save location');
-      }
+      // Set a placeholder token to enable map view (will be replaced with actual token later)
+      setTimeout(() => {
+        setMapboxToken('placeholder-token');
+      }, 1500);
     } catch (error) {
       toast({
         title: 'Location access denied',

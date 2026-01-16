@@ -54,14 +54,12 @@ func main() {
 	// ---- OAUTH ----
 	handlers.InitGoogleOAuth()
 
-	// ---- CLEANUP ----
-	handlers.CleanupActiveScenes()
-
 	// ---- WEBSOCKETS ----
 	wsHub = websocket.NewHub()
 	go wsHub.Run()
 
-	go handlers.StartChatCleanupWorker(wsHub)
+	// Run cleanup once at boot
+	handlers.RunBootCleanup(wsHub)
 
 	// ---- GIN MODE ----
 	ginMode := os.Getenv("GIN_MODE")

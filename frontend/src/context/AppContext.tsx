@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, ReactNode, useCallback, useEffect } from 'react';
 import { scenesApi } from '@/api/scenes';
 import { ChatSession } from '@/api/chat';
+import { setLogoutHandler } from '@/api/axios-config';
 
 export interface Persona {
   id: string;
@@ -135,6 +136,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     localStorage.removeItem('accessToken');
     localStorage.removeItem('selectedPersona');
   }, []);
+
+  // Register logout handler for axios interceptor
+  useEffect(() => {
+    setLogoutHandler(logout);
+  }, [logout]);
 
   return (
     <AppContext.Provider
