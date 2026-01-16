@@ -138,13 +138,6 @@ const PersonaSelect = () => {
         </>
       )}
 
-      {/* Email display */}
-      {authState?.email && (
-        <div className="absolute top-20 right-6 z-20 text-xs text-muted-foreground/60 font-mono">
-          {authState.email}
-        </div>
-      )}
-
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -267,6 +260,13 @@ const PersonaSelect = () => {
                   : 'Enter the Scene'}
               {isSceneActive ? <RefreshCw className="ml-2 w-5 h-5" /> : <ArrowRight className="ml-2 w-5 h-5" />}
             </Button>
+            
+            {/* Email display */}
+            {authState?.email && (
+              <div className="text-center mt-3 text-xs text-muted-foreground/50 font-mono">
+                {authState.email}
+              </div>
+            )}
           </div>
         </div>
       </motion.div>
