@@ -134,6 +134,7 @@ const ChatInbox = ({ onClose }: ChatInboxProps) => {
     currentSceneId, unreadSessionIds, setUnreadSessionIds
   } = useApp();
   const { subscribe } = useWebSocket(currentSceneId);
+  const [acceptingRequestId, setAcceptingRequestId] = useState<string | null>(null);
 
   // Fetch everything on mount and when scene becomes active
   useEffect(() => {
@@ -195,16 +196,35 @@ const ChatInbox = ({ onClose }: ChatInboxProps) => {
   };
 
   const handleAccept = async (requestId: string) => {
+    // Prevent double-clicks
+    if (acceptingRequestId) return;
+    
+    setAcceptingRequestId(requestId);
+    
     try {
+      // Accept the request
       await chatApi.acceptChatRequest(requestId);
+      
+      // Update local state
       setChatRequests(prev =>
         prev.map(r => r.id === requestId ? { ...r, status: 'accepted' as const } : r)
       );
+      
+      // Refresh sessions to get the new active session
+      await loadSessions();
+      
+      // Open the chat
       setActiveChatId(requestId);
-      onClose();
+      
+      // Close inbox after a short delay to ensure chat loads
+      setTimeout(() => {
+        onClose();
+      }, 100);
     } catch (error) {
       console.error('Failed to accept chat request:', error);
       alert('Failed to accept chat request');
+    } finally {
+      setAcceptingRequestId(null);
     }
   };
 
@@ -339,16 +359,27 @@ const ChatInbox = ({ onClose }: ChatInboxProps) => {
                           <Button
                             size="sm"
                             onClick={() => handleAccept(request.id)}
-                            className="flex-1 h-9 bg-scene-active hover:bg-scene-active/90 text-white font-bold text-xs shadow-lg shadow-scene-active/20"
+                            disabled={acceptingRequestId === request.id}
+                            className="flex-1 h-9 bg-scene-active hover:bg-scene-active/90 text-white font-bold text-xs shadow-lg shadow-scene-active/20 disabled:opacity-50"
                           >
-                            <Check className="w-4 h-4 mr-1" />
-                            ACCEPT
+                            {acceptingRequestId === request.id ? (
+                              <>
+                                <span className="animate-spin mr-1">⏳</span>
+                                ACCEPTING...
+                              </>
+                            ) : (
+                              <>
+                                <Check className="w-4 h-4 mr-1" />
+                                ACCEPT
+                              </>
+                            )}
                           </Button>
                           <Button
                             size="sm"
                             variant="ghost"
                             onClick={() => handleReject(request.id)}
-                            className="w-10 h-9 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                            disabled={acceptingRequestId === request.id}
+                            className="w-10 h-9 p-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 disabled:opacity-50"
                           >
                             <X className="w-4 h-4" />
                           </Button>
