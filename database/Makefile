@@ -91,6 +91,9 @@ db-postgis: db-create ## Enable PostGIS extension in database
 
 db-drop: ## Drop app database
 	@echo "Dropping database '$(DB_NAME)'..."
+	@echo "Terminating active connections..."
+	@$(PSQL) -U postgres -c \
+		"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='$(DB_NAME)' AND pid <> pg_backend_pid();"
 	@$(PSQL) -U postgres -c "DROP DATABASE IF EXISTS $(DB_NAME);"
 
 db-info: ## Show DB connection info

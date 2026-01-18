@@ -106,7 +106,7 @@ const SceneToggle = () => {
       onClick={handleToggle}
       disabled={isLoading}
       className={`
-        relative flex items-center gap-3 px-8 py-4 rounded-2xl font-semibold text-lg
+        relative flex items-center gap-2 sm:gap-3 px-6 sm:px-8 py-3 sm:py-4 rounded-xl sm:rounded-2xl font-semibold text-base sm:text-lg
         transition-all duration-500 backdrop-blur-md
         ${isSceneActive
           ? 'bg-scene-active/20 border-2 border-scene-active text-scene-active scene-pulse'
@@ -115,7 +115,7 @@ const SceneToggle = () => {
       `}
       whileTap={{ scale: isLoading ? 1 : 0.95 }}
     >
-      <Power className={`w-6 h-6 transition-colors ${isSceneActive ? 'text-scene-active' : ''}`} />
+      <Power className={`w-5 h-5 sm:w-6 sm:h-6 transition-colors ${isSceneActive ? 'text-scene-active' : ''}`} />
       <span>
         {isLoading ? 'Loading...' : isSceneActive ? 'Scene is LIVE' : 'Go Live'}
       </span>

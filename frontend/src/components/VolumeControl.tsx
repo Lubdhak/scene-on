@@ -65,15 +65,15 @@ export const VolumeControl = ({ className = '' }: VolumeControlProps) => {
             }}
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            className="group relative flex items-center gap-2 px-4 py-2.5 bg-card/80 backdrop-blur-md border border-border/50 rounded-xl hover:bg-card transition-colors cursor-pointer shadow-sm"
+            className="group relative flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 sm:py-2.5 bg-card/80 backdrop-blur-md border border-border/50 rounded-lg sm:rounded-xl hover:bg-card transition-colors cursor-pointer shadow-sm"
             title="Click to adjust, double-click to mute"
           >
             {/* Icon with pulse */}
             <div className="relative">
               {isMuted || volume === 0 ? (
-                <VolumeX className={`w-4 h-4 ${volumeColor} relative z-10`} />
+                <VolumeX className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${volumeColor} relative z-10`} />
               ) : (
-                <Volume2 className={`w-4 h-4 ${volumeColor} relative z-10`} />
+                <Volume2 className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${volumeColor} relative z-10`} />
               )}
               {!isMuted && volume > 0 && (
                 <motion.div
@@ -91,7 +91,7 @@ export const VolumeControl = ({ className = '' }: VolumeControlProps) => {
               )}
             </div>
             <motion.span 
-              className={`text-sm font-semibold ${volumeColor}`}
+              className={`text-xs sm:text-sm font-semibold ${volumeColor}`}
               animate={{ scale: [1, 1.05, 1] }}
               transition={{ duration: 0.3 }}
             >

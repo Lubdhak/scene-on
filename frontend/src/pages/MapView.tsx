@@ -318,14 +318,14 @@ const MapView = () => {
   }
 
   return (
-    <div className="h-screen w-full bg-background relative overflow-hidden">
+    <div className="h-dvh w-full bg-background relative overflow-hidden">
       {/* Map Background */}
       <MapContainer />
 
       {/* Top Bar */}
-      <div className="absolute top-0 left-0 right-0 z-20 p-4">
+      <div className="absolute top-0 left-0 right-0 z-20 p-2 sm:p-4 safe-top">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1.5 sm:gap-3">
             <PersonaBadge persona={selectedPersona} />
             
             {/* Distance Slider - show when scene is active */}
@@ -360,17 +360,17 @@ const MapView = () => {
             </AnimatePresence>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             {/* Inbox Button */}
             <Button
               variant="ghost"
               size="icon"
               onClick={() => setShowInbox(true)}
-              className="relative w-12 h-12 rounded-xl bg-card/80 backdrop-blur-md border border-border/50 hover:bg-card"
+              className="relative w-10 h-10 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl bg-card/80 backdrop-blur-md border border-border/50 hover:bg-card"
             >
-              <Inbox className="w-5 h-5 text-foreground" />
+              <Inbox className="w-4 h-4 sm:w-5 sm:h-5 text-foreground" />
               {totalNotificationCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-accent text-accent-foreground text-xs font-bold flex items-center justify-center">
+                <span className="absolute -top-1 -right-1 w-4 h-4 sm:w-5 sm:h-5 rounded-full bg-accent text-accent-foreground text-[10px] sm:text-xs font-bold flex items-center justify-center">
                   {totalNotificationCount}
                 </span>
               )}
@@ -381,9 +381,9 @@ const MapView = () => {
               variant="ghost"
               size="icon"
               onClick={() => navigate('/persona')}
-              className="w-12 h-12 rounded-xl bg-card/80 backdrop-blur-md border border-border/50 hover:bg-card"
+              className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl bg-card/80 backdrop-blur-md border border-border/50 hover:bg-card"
             >
-              <Settings className="w-5 h-5 text-foreground" />
+              <Settings className="w-4 h-4 sm:w-5 sm:h-5 text-foreground" />
             </Button>
 
             {/* Logout */}
@@ -391,23 +391,23 @@ const MapView = () => {
               variant="ghost"
               size="icon"
               onClick={logout}
-              className="w-12 h-12 rounded-xl bg-card/80 backdrop-blur-md border border-border/50 hover:bg-card text-destructive hover:text-destructive"
+              className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl bg-card/80 backdrop-blur-md border border-border/50 hover:bg-card text-destructive hover:text-destructive"
             >
-              <LogOut className="w-5 h-5" />
+              <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
             </Button>
           </div>
         </div>
       </div>
 
       {/* Bottom Controls */}
-      <div className="absolute bottom-0 left-0 right-0 z-20 p-4 pb-8">
-        <div className="flex flex-col items-center gap-4">
+      <div className="absolute bottom-0 left-0 right-0 z-20 p-3 pb-safe sm:p-4 sm:pb-8 safe-bottom">
+        <div className="flex flex-col items-center gap-2 sm:gap-4">
           {/* Yell Button - only show when scene is active */}
           <AnimatePresence>
             {isSceneActive && !showYellComposer && (
               <motion.button
                 onClick={() => setShowYellComposer(true)}
-                className="px-6 py-3 rounded-full bg-accent text-accent-foreground font-semibold shadow-lg hover:scale-105 transition-transform"
+                className="px-5 py-2.5 sm:px-6 sm:py-3 text-sm sm:text-base rounded-full bg-accent text-accent-foreground font-semibold shadow-lg hover:scale-105 transition-transform"
               >
                 📢 Yell to Nearby
               </motion.button>

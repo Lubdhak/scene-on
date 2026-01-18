@@ -65,11 +65,11 @@ export const DistanceSlider = ({ value, onChange, className = '' }: DistanceSlid
             onClick={() => setIsExpanded(true)}
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            className="group relative flex items-center gap-2 px-4 py-2.5 bg-card/80 backdrop-blur-md border border-border/50 rounded-xl hover:bg-card transition-colors cursor-pointer shadow-sm"
+            className="group relative flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 sm:py-2.5 bg-card/80 backdrop-blur-md border border-border/50 rounded-lg sm:rounded-xl hover:bg-card transition-colors cursor-pointer shadow-sm"
           >
             {/* Animated radar pulse */}
             <div className="relative">
-              <Radar className={`w-4 h-4 ${radiusColor} relative z-10`} />
+              <Radar className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${radiusColor} relative z-10`} />
               <motion.div
                 className={`absolute inset-0 ${radiusColor} rounded-full opacity-20`}
                 animate={{
@@ -84,7 +84,7 @@ export const DistanceSlider = ({ value, onChange, className = '' }: DistanceSlid
               />
             </div>
             <motion.span 
-              className={`text-sm font-semibold ${radiusColor}`}
+              className={`text-xs sm:text-sm font-semibold ${radiusColor}`}
               animate={{ scale: [1, 1.05, 1] }}
               transition={{ duration: 0.3 }}
             >
