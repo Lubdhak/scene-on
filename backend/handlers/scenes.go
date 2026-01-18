@@ -50,27 +50,43 @@ func StartScene(wsHub *websocket.Hub) gin.HandlerFunc {
 			return
 		}
 
+		// Combined query: check if persona exists AND get active scene in one query
+		var personaExists bool
+		var scene models.Scene
+		err = config.DB.QueryRow(
+			`SELECT 
+				EXISTS(SELECT 1 FROM personas WHERE id = $1),
+				COALESCE(s.id, '00000000-0000-0000-0000-000000000000'::uuid),
+				COALESCE(s.persona_id, '00000000-0000-0000-0000-000000000000'::uuid),
+				COALESCE(s.latitude, 0),
+				COALESCE(s.longitude, 0),
+				COALESCE(s.is_active, false),
+				COALESCE(s.started_at, '1970-01-01'::timestamptz),
+				COALESCE(s.expires_at, '1970-01-01'::timestamptz),
+				COALESCE(s.created_at, '1970-01-01'::timestamptz)
+			 FROM (SELECT 1) dummy
+			 LEFT JOIN scenes s ON s.persona_id = $1 AND s.is_active = true AND s.expires_at > NOW()
+			 ORDER BY s.started_at DESC LIMIT 1`,
+			personaID,
+		).Scan(&personaExists, &scene.ID, &scene.PersonaID, &scene.Latitude, &scene.Longitude,
+			&scene.IsActive, &scene.StartedAt, &scene.ExpiresAt, &scene.CreatedAt)
 
-		// Check if persona exists (it might have been deleted by ephemeral cleanup)
-		var exists bool
-		err = config.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM personas WHERE id = $1)", personaID).Scan(&exists)
-		if err != nil || !exists {
+		if err != nil {
+			log.Printf("Failed to check persona/scene: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+			return
+		}
+
+		if !personaExists {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Persona not found. Please recreate your identity.", "code": "PERSONA_NOT_FOUND"})
 			return
 		}
 
-		// Check if user already has an active scene
-		var scene models.Scene
-		err = config.DB.QueryRow(
-			`SELECT id, persona_id, latitude, longitude, is_active, started_at, expires_at, created_at
-			 FROM scenes 
-			 WHERE persona_id = $1 AND is_active = true AND expires_at > NOW()
-			 ORDER BY started_at DESC LIMIT 1`,
-			personaID,
-		).Scan(&scene.ID, &scene.PersonaID, &scene.Latitude, &scene.Longitude,
-			&scene.IsActive, &scene.StartedAt, &scene.ExpiresAt, &scene.CreatedAt)
+		// Check if we found an active scene (ID will not be zero UUID)
+		zeroUUID := uuid.MustParse("00000000-0000-0000-0000-000000000000")
+		hasActiveScene := scene.ID != zeroUUID
 
-		if err == nil {
+		if hasActiveScene {
 			// Update existing scene (Upsert behavior)
 			scene.Latitude = req.Latitude
 			scene.Longitude = req.Longitude
@@ -85,7 +101,7 @@ func StartScene(wsHub *websocket.Hub) gin.HandlerFunc {
 				return
 			}
 			log.Printf("✓ Updated existing scene %s for persona %s", scene.ID, personaID)
-		} else if err == sql.ErrNoRows {
+		} else {
 			// Create new scene
 			now := time.Now().UTC()
 			scene = models.Scene{
@@ -110,9 +126,6 @@ func StartScene(wsHub *websocket.Hub) gin.HandlerFunc {
 				return
 			}
 			log.Printf("✓ Created new scene %s for persona %s", scene.ID, personaID)
-		} else {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error checking active scene"})
-			return
 		}
 
 		// Broadcast scene event to nearby users using PostGIS (much more efficient)
@@ -154,24 +167,16 @@ func StopScene(wsHub *websocket.Hub) gin.HandlerFunc {
 			return
 		}
 
-		// Hard delete associated data (yells, chat requests)
-		// Chat messages will be deleted via cascade (if defined in migration) or we can manually delete
-		_, err = config.DB.Exec(`DELETE FROM yells WHERE scene_id = $1`, sceneID)
-		if err != nil {
-			log.Printf("Warning: Failed to delete yells for scene %s: %v", sceneID, err)
-		}
-
-		_, err = config.DB.Exec(`DELETE FROM chat_requests WHERE from_scene_id = $1 OR to_scene_id = $1`, sceneID)
-		if err != nil {
-			log.Printf("Warning: Failed to delete chat requests for scene %s: %v", sceneID, err)
-		}
-
-		// Deactivate scene
+		// Optimize: Single CTE query to delete yells, chat_requests and deactivate scene
 		_, err = config.DB.Exec(
-			`UPDATE scenes SET is_active = false WHERE id = $1`,
+			`WITH 
+				delete_yells AS (DELETE FROM yells WHERE scene_id = $1),
+				delete_chat_requests AS (DELETE FROM chat_requests WHERE from_scene_id = $1 OR to_scene_id = $1)
+			 UPDATE scenes SET is_active = false WHERE id = $1`,
 			sceneID,
 		)
 		if err != nil {
+			log.Printf("Failed to stop scene %s: %v", sceneID, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to stop scene"})
 			return
 		}

@@ -51,15 +51,16 @@ func SendChatRequest(wsHub *websocket.Hub) gin.HandlerFunc {
 			return
 		}
 
-		// Get user's active scene
+		// Get user's active scene with persona info in one query
 		var fromSceneID uuid.UUID
+		var fromPersonaName, fromPersonaAvatar, fromPersonaDescription string
 		err = config.DB.QueryRow(
-			`SELECT s.id FROM scenes s
+			`SELECT s.id, p.name, p.avatar_url, p.description FROM scenes s
 			 JOIN personas p ON s.persona_id = p.id
 			 WHERE p.user_id = $1 AND s.is_active = true AND s.expires_at > NOW()
 			 ORDER BY s.started_at DESC LIMIT 1`,
 			userID,
-		).Scan(&fromSceneID)
+		).Scan(&fromSceneID, &fromPersonaName, &fromPersonaAvatar, &fromPersonaDescription)
 
 		if err == sql.ErrNoRows {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "No active scene found. Start a scene first."})
@@ -127,17 +128,8 @@ func SendChatRequest(wsHub *websocket.Hub) gin.HandlerFunc {
 			return
 		}
 
-		// Fetch requester persona info for the notification
-		var fromPersonaName, fromPersonaAvatar, fromPersonaDescription string
-		err = config.DB.QueryRow(
-			`SELECT p.name, p.avatar_url, p.description 
-			 FROM scenes s 
-			 JOIN personas p ON s.persona_id = p.id 
-			 WHERE s.id = $1`,
-			fromSceneID,
-		).Scan(&fromPersonaName, &fromPersonaAvatar, &fromPersonaDescription)
-
-		if err == nil {
+		// Use persona info already fetched in the first query
+		if true {
 			// Send Targeted WebSocket notification to recipient scene
 			wsHub.Targeted <- websocket.TargetedMessage{
 				TargetSceneID: toSceneID,
@@ -589,43 +581,30 @@ func SendChatMessage(wsHub *websocket.Hub) gin.HandlerFunc {
 			return
 		}
 
-		// Get user's active scene
-		var userSceneID uuid.UUID
-		err = config.DB.QueryRow(
-			`SELECT s.id FROM scenes s
-			 JOIN personas p ON s.persona_id = p.id
-			 WHERE p.user_id = $1 AND s.is_active = true AND s.expires_at > NOW()
-			 ORDER BY s.started_at DESC LIMIT 1`,
-			userID,
-		).Scan(&userSceneID)
-
-		if err == sql.ErrNoRows {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "No active scene found"})
-			return
-		}
-		if err != nil {
-			log.Printf("Failed to get active scene: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get active scene"})
-			return
-		}
-
-		// Verify chat is accepted, not expired, and user is part of it
-		var fromSceneID, toSceneID uuid.UUID
+		// Combined query: Get user's active scene AND verify chat in one query
+		var userSceneID, fromSceneID, toSceneID uuid.UUID
 		var status string
 		var expiresAt *time.Time
 		err = config.DB.QueryRow(
-			`SELECT from_scene_id, to_scene_id, status, expires_at 
-			 FROM chat_requests WHERE id = $1`,
-			reqUUID,
-		).Scan(&fromSceneID, &toSceneID, &status, &expiresAt)
+			`SELECT s.id, cr.from_scene_id, cr.to_scene_id, cr.status, cr.expires_at
+			 FROM scenes s
+			 JOIN personas p ON s.persona_id = p.id
+			 CROSS JOIN chat_requests cr
+			 WHERE p.user_id = $1 
+			   AND s.is_active = true 
+			   AND s.expires_at > NOW()
+			   AND cr.id = $2
+			 ORDER BY s.started_at DESC LIMIT 1`,
+			userID, reqUUID,
+		).Scan(&userSceneID, &fromSceneID, &toSceneID, &status, &expiresAt)
 
 		if err == sql.ErrNoRows {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Chat not found"})
+			c.JSON(http.StatusNotFound, gin.H{"error": "No active scene or chat not found"})
 			return
 		}
 		if err != nil {
-			log.Printf("Failed to get chat request: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get chat"})
+			log.Printf("Failed to get scene/chat: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to verify chat"})
 			return
 		}
 
