@@ -54,10 +54,14 @@ const MapTokenInput = () => {
         description: `Coordinates: ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
       });
 
-      // Set a placeholder token to enable map view (will be replaced with actual token later)
-      setTimeout(() => {
-        setMapboxToken('placeholder-token');
-      }, 1500);
+      // Check if Mapbox token exists in environment, if not, set flag to skip map
+      const token = import.meta.env.VITE_MAPBOX_TOKEN;
+      if (token) {
+        setMapboxToken(token);
+      } else {
+        // Set a flag to indicate we should proceed without map
+        setMapboxToken('no-map');
+      }
     } catch (error) {
       toast({
         title: 'Location access denied',

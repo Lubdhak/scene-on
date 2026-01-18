@@ -255,6 +255,13 @@ const MapContainer = () => {
   useEffect(() => {
     if (!mapContainer.current || !mapboxToken) return;
 
+    // Skip map initialization if no valid token or explicitly disabled
+    if (mapboxToken === 'no-map' || mapboxToken === 'placeholder-token') {
+      console.log('Map disabled: no valid Mapbox token');
+      setMapError(true);
+      return;
+    }
+
     // Check for WebGL support first
     const canvas = document.createElement('canvas');
     const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');

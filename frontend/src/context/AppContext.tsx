@@ -1,7 +1,7 @@
-import React, { createContext, useContext, useState, ReactNode, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useCallback, useEffect, useRef } from 'react';
 import { scenesApi } from '@/api/scenes';
 import { ChatSession } from '@/api/chat';
-import { setLogoutHandler } from '@/api/axios-config';
+import { setLogoutHandler, createAuthAxios } from '@/api/axios-config';
 
 export interface Persona {
   id: string;
@@ -67,6 +67,7 @@ interface AppContextType {
   setUnreadSessionIds: React.Dispatch<React.SetStateAction<string[]>>;
   distanceRadius: number;
   setDistanceRadius: (radius: number) => void;
+  setWsDisconnect: (disconnectFn: (() => void) | null) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -87,7 +88,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [activeSessions, setActiveSessions] = useState<ChatSession[]>([]);
   const [currentSceneId, setCurrentSceneId] = useState<string | null>(null);
-  const [mapboxToken, setMapboxToken] = useState('');
+  const [mapboxToken, setMapboxToken] = useState(() => {
+    // Try to get from environment variable first
+    return import.meta.env.VITE_MAPBOX_TOKEN || '';
+  });
   const [authState, setAuthState] = useState<AuthState | null>(() => {
     try {
       const stored = localStorage.getItem('auth');
@@ -106,6 +110,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       return 50;
     }
   });
+  const wsDisconnectRef = useRef<(() => void) | null>(null);
 
   // Persist distance radius to localStorage
   useEffect(() => {
@@ -118,7 +123,25 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     localStorage.setItem('accessToken', auth.accessToken);
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    // Disconnect WebSocket first
+    if (wsDisconnectRef.current) {
+      console.log('🔌 Disconnecting WebSocket before logout...');
+      wsDisconnectRef.current();
+      wsDisconnectRef.current = null;
+    }
+
+    // Call backend logout endpoint which handles scene cleanup
+    try {
+      const api = createAuthAxios();
+      await api.post('/auth/logout');
+      console.log('✓ Logged out from backend');
+    } catch (error) {
+      console.error('Backend logout failed:', error);
+      // Continue with client-side cleanup even if backend call fails
+    }
+
+    // Client-side cleanup
     setAuthState(null);
     setSelectedPersona(null);
     setIsSceneActive(false);
@@ -130,8 +153,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setCurrentSceneId(null);
     setShowInbox(false);
     setUnreadSessionIds([]);
-    setDistanceRadius(50); // Reset to default
-    // Clear local storage if needed
+    setDistanceRadius(50);
     localStorage.removeItem('auth');
     localStorage.removeItem('accessToken');
     localStorage.removeItem('selectedPersona');
@@ -141,6 +163,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     setLogoutHandler(logout);
   }, [logout]);
+
+  const setWsDisconnect = useCallback((disconnectFn: (() => void) | null) => {
+    wsDisconnectRef.current = disconnectFn;
+  }, []);
 
   return (
     <AppContext.Provider
@@ -173,7 +199,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         unreadSessionIds,
         setUnreadSessionIds,
         distanceRadius,
-        setDistanceRadius
+        setDistanceRadius,
+        setWsDisconnect,
       }}
     >
       {children}

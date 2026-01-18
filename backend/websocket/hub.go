@@ -13,19 +13,35 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+const (
+	// Time allowed to write a message to the peer
+	writeWait = 10 * time.Second
+
+	// Time allowed to read the next pong message from the peer
+	pongWait = 60 * time.Second
+
+	// Send pings to peer with this period. Must be less than pongWait
+	pingPeriod = (pongWait * 9) / 10 // 54 seconds
+
+	// Maximum message size allowed from peer
+	maxMessageSize = 8192 // 8KB
+)
+
 type Message struct {
 	Type string                 `json:"type"`
 	Data map[string]interface{} `json:"data"`
 }
 
 type Client struct {
-	ID        uuid.UUID
-	SceneID   uuid.UUID
-	Conn      *websocket.Conn
-	Send      chan Message
-	Hub       *Hub
-	Location  Location
-	closeChan chan struct{}
+	ID           uuid.UUID
+	SceneID      uuid.UUID
+	Conn         *websocket.Conn
+	Send         chan Message
+	Hub          *Hub
+	Location     Location
+	ConnectedAt  time.Time
+	LastActivity time.Time
+	mu           sync.RWMutex
 }
 
 type Location struct {
@@ -56,11 +72,13 @@ type BroadcastMessage struct {
 }
 
 var Upgrader = websocket.Upgrader{
-	ReadBufferSize:  2048,  // Increased for better performance
-	WriteBufferSize: 2048,  // Increased for better performance
+	ReadBufferSize:  4096,
+	WriteBufferSize: 4096,
 	CheckOrigin: func(r *http.Request) bool {
-		return true // TODO: Implement proper origin checking
+		// TODO: In production, check against allowed origins
+		return true
 	},
+	EnableCompression: true, // Enable per-message compression
 }
 
 func NewHub() *Hub {
@@ -97,6 +115,10 @@ func (h *Hub) registerClient(client *Client) {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
 	
+	now := time.Now()
+	client.ConnectedAt = now
+	client.LastActivity = now
+	
 	h.clients[client.ID] = client
 	if client.SceneID != uuid.Nil {
 		if h.sceneClients[client.SceneID] == nil {
@@ -104,7 +126,7 @@ func (h *Hub) registerClient(client *Client) {
 		}
 		h.sceneClients[client.SceneID][client.ID] = client
 	}
-	log.Printf("Client %s (Scene: %s) connected", client.ID, client.SceneID)
+	log.Printf("✓ Client %s (Scene: %s) connected. Total clients: %d", client.ID, client.SceneID, len(h.clients))
 }
 
 func (h *Hub) unregisterClient(client *Client) {
@@ -120,8 +142,9 @@ func (h *Hub) unregisterClient(client *Client) {
 			}
 		}
 		close(client.Send)
+		duration := time.Since(client.ConnectedAt)
+		log.Printf("✓ Client %s disconnected. Duration: %v, Remaining: %d", client.ID, duration.Round(time.Second), len(h.clients))
 	}
-	log.Printf("Client %s disconnected", client.ID)
 }
 
 func (h *Hub) sendTargeted(targetedMsg TargetedMessage) {
@@ -218,35 +241,45 @@ func (c *Client) ReadPump() {
 		c.Conn.Close()
 	}()
 
-	c.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	c.Conn.SetReadLimit(maxMessageSize)
+	c.Conn.SetReadDeadline(time.Now().Add(pongWait))
 	c.Conn.SetPongHandler(func(string) error {
-		c.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		c.Conn.SetReadDeadline(time.Now().Add(pongWait))
+		c.updateActivity()
 		return nil
 	})
 
 	for {
 		_, message, err := c.Conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("WebSocket error: %v", err)
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNormalClosure) {
+				log.Printf("❌ WebSocket read error (Client %s): %v", c.ID, err)
 			}
 			break
 		}
 
+		c.updateActivity()
+
 		var msg Message
 		if err := json.Unmarshal(message, &msg); err != nil {
-			log.Printf("JSON unmarshal error: %v", err)
+			log.Printf("❌ JSON unmarshal error (Client %s): %v", c.ID, err)
 			continue
 		}
 
 		// Handle different message types
 		switch msg.Type {
 		case "ping":
-			c.Send <- Message{Type: "pong", Data: map[string]interface{}{}}
+			select {
+			case c.Send <- Message{Type: "pong", Data: map[string]interface{}{"timestamp": time.Now().Unix()}}:
+			default:
+				log.Printf("⚠️ Failed to send pong to client %s (buffer full)", c.ID)
+			}
 		case "location_update":
 			if lat, ok := msg.Data["latitude"].(float64); ok {
 				if lon, ok := msg.Data["longitude"].(float64); ok {
+					c.mu.Lock()
 					c.Location = Location{Latitude: lat, Longitude: lon}
+					c.mu.Unlock()
 				}
 			}
 		}
@@ -254,7 +287,7 @@ func (c *Client) ReadPump() {
 }
 
 func (c *Client) WritePump() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		ticker.Stop()
 		c.Conn.Close()
@@ -263,29 +296,85 @@ func (c *Client) WritePump() {
 	for {
 		select {
 		case message, ok := <-c.Send:
-			c.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
-				c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+				// Hub closed the channel
+				c.Conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 				return
 			}
 
 			data, err := json.Marshal(message)
 			if err != nil {
-				log.Printf("JSON marshal error: %v", err)
+				log.Printf("❌ JSON marshal error (Client %s): %v", c.ID, err)
 				continue
 			}
 
-			if err := c.Conn.WriteMessage(websocket.TextMessage, data); err != nil {
+			w, err := c.Conn.NextWriter(websocket.TextMessage)
+			if err != nil {
+				return
+			}
+			w.Write(data)
+
+			if err := w.Close(); err != nil {
 				return
 			}
 
+			c.updateActivity()
+
 		case <-ticker.C:
-			c.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			c.Conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				log.Printf("⚠️ Failed to send ping to client %s: %v", c.ID, err)
 				return
 			}
 		}
 	}
+}
+
+// updateActivity updates the last activity timestamp
+func (c *Client) updateActivity() {
+	c.mu.Lock()
+	c.LastActivity = time.Now()
+	c.mu.Unlock()
+}
+
+// GetStats returns connection statistics
+func (c *Client) GetStats() map[string]interface{} {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return map[string]interface{}{
+		"client_id":     c.ID.String(),
+		"scene_id":      c.SceneID.String(),
+		"connected_at":  c.ConnectedAt.Unix(),
+		"last_activity": c.LastActivity.Unix(),
+		"uptime":        time.Since(c.ConnectedAt).Seconds(),
+	}
+}
+
+// GetStats returns hub statistics
+func (h *Hub) GetStats() map[string]interface{} {
+	h.mutex.RLock()
+	defer h.mutex.RUnlock()
+	
+	return map[string]interface{}{
+		"total_clients":       len(h.clients),
+		"total_scenes":        len(h.sceneClients),
+		"broadcast_queue":     len(h.Broadcast),
+		"targeted_queue":      len(h.Targeted),
+		"register_queue":      len(h.Register),
+		"unregister_queue":    len(h.Unregister),
+	}
+}
+
+// GetClientsByScene returns the number of clients in a specific scene
+func (h *Hub) GetClientsByScene(sceneID uuid.UUID) int {
+	h.mutex.RLock()
+	defer h.mutex.RUnlock()
+	
+	if clients, ok := h.sceneClients[sceneID]; ok {
+		return len(clients)
+	}
+	return 0
 }
 
 // Haversine formula to calculate distance between two coordinates

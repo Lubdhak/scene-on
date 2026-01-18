@@ -58,6 +58,13 @@ func SetupRoutes(router *gin.Engine, wsHub *websocket.Hub) {
 			auth.POST("/google/dummy", handlers.DummyGoogleLogin)
 		}
 
+		// Protected auth routes
+		authProtected := v1.Group("/auth")
+		authProtected.Use(middleware.AuthMiddleware())
+		{
+			authProtected.POST("/logout", handlers.Logout(wsHub))
+		}
+
 		// Protected routes (require authentication)
 		protected := v1.Group("")
 		protected.Use(middleware.AuthMiddleware())

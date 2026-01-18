@@ -38,11 +38,18 @@ const MapView = () => {
     setUnreadSessionIds,
     distanceRadius,
     setDistanceRadius,
+    setWsDisconnect,
     logout
   } = useApp();
   const { toast } = useToast();
   const [showYellComposer, setShowYellComposer] = useState(false);
-  const { subscribe, isConnected } = useWebSocket(currentSceneId);
+  const { subscribe, isConnected, disconnect } = useWebSocket(currentSceneId);
+
+  // Register WebSocket disconnect function with AppContext
+  useEffect(() => {
+    setWsDisconnect(disconnect);
+    return () => setWsDisconnect(null);
+  }, [disconnect, setWsDisconnect]);
 
   // Auto-clear unread status when a chat becomes active
   useEffect(() => {

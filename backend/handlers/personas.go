@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"encoding/json"
 	"log"
 	"net/http"
 	"scene-on/backend/config"
@@ -114,8 +115,14 @@ func GetOrCreatePersona(c *gin.Context) {
 			UpdatedAt:   time.Now(),
 		}
 
-		if stats.Valid {
-			persona.Stats = models.JSONB(stats.String)
+		// Parse stats JSON if present
+		if stats.Valid && stats.String != "" {
+			var statsMap models.JSONB
+			if err := json.Unmarshal([]byte(stats.String), &statsMap); err != nil {
+				log.Printf("⚠️ Failed to parse stats JSON: %v", err)
+			} else {
+				persona.Stats = statsMap
+			}
 		}
 
 		_, err = config.DB.Exec(

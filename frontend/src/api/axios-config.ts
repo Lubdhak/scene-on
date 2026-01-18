@@ -16,9 +16,9 @@ export const getAuthToken = (): string | null => {
 };
 
 // Logout handler - will be set by AppContext
-let logoutHandler: (() => void) | null = null;
+let logoutHandler: (() => void | Promise<void>) | null = null;
 
-export const setLogoutHandler = (handler: () => void) => {
+export const setLogoutHandler = (handler: () => void | Promise<void>) => {
     logoutHandler = handler;
 };
 
