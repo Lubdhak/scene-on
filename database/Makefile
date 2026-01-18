@@ -69,6 +69,11 @@ db-create: db-bootstrap ## Create app DB user and database
 		"REASSIGN OWNED BY postgres TO $(DB_USER);" 2>/dev/null || true
 	@$(PSQL) -U postgres -d $(DB_NAME) -c \
 		"ALTER DATABASE $(DB_NAME) OWNER TO $(DB_USER);"
+	
+	@echo "Creating required extensions..."
+	@$(PSQL) -U postgres -d $(DB_NAME) -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+	@$(PSQL) -U postgres -d $(DB_NAME) -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+	@echo "✓ Extensions created successfully"
 
 db-postgis: db-create ## Enable PostGIS extension in database
 	@echo "Checking PostGIS availability..."

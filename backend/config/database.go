@@ -72,7 +72,11 @@ func CloseDatabase() {
 
 func runMigrations() error {
 	migrations := []string{
+		// NOTE: Extensions are created by database/Makefile during db-create
+		// These are kept here as no-ops for documentation purposes
 		`CREATE EXTENSION IF NOT EXISTS pgcrypto`,
+		
+		`CREATE EXTENSION IF NOT EXISTS postgis`,
 
 		`CREATE TABLE IF NOT EXISTS users (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
