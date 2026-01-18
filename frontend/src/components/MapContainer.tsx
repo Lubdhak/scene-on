@@ -578,7 +578,7 @@ const MapContainer = () => {
                         maxLength={50}
                         value={inviteMessage}
                         onChange={(e) => setInviteMessage(e.target.value)}
-                        placeholder="Wanna catch up?"
+                        placeholder=""
                         className="w-full bg-muted/50 border border-border rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
                       />
                       <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-medium">

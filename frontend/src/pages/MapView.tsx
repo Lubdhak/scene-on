@@ -10,12 +10,14 @@ import EphemeralChat from '@/components/EphemeralChat';
 import PersonaBadge from '@/components/PersonaBadge';
 import MapTokenInput from '@/components/MapTokenInput';
 import { DistanceSlider } from '@/components/DistanceSlider';
+import { VolumeControl } from '@/components/VolumeControl';
 import { Settings, Inbox, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { chatApi } from '@/api/chat';
 import { scenesApi } from '@/api/scenes';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { soundManager } from '@/utils/soundManager';
 
 const MapView = () => {
   const navigate = useNavigate();
@@ -137,6 +139,9 @@ const MapView = () => {
     const unsubscribeReceived = subscribe('chat.request.received', (data) => {
       // Optimistic state update only
       if (data && data.from_scene_id) {
+        // Play notification sound for new chat request
+        soundManager.playRequestNotification();
+        
         setChatRequests(prev => {
           if (prev.some(r => r.id === data.id)) return prev;
           return [{
@@ -177,6 +182,8 @@ const MapView = () => {
         // Mark as unread if not active
         if (activeChatId !== reqId) {
           setUnreadSessionIds(prev => prev.includes(reqId) ? prev : [...prev, reqId]);
+          // Play sound for new message (only if not in active chat)
+          soundManager.playIncomingMessage();
         }
 
         // Update last message in sessions list
@@ -334,6 +341,20 @@ const MapView = () => {
                     value={distanceRadius}
                     onChange={setDistanceRadius}
                   />
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Volume Control - show when scene is active */}
+            <AnimatePresence>
+              {isSceneActive && (
+                <motion.div
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ type: "spring", stiffness: 300, damping: 25, delay: 0.1 }}
+                >
+                  <VolumeControl />
                 </motion.div>
               )}
             </AnimatePresence>

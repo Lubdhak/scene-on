@@ -6,6 +6,8 @@ import { Input } from '@/components/ui/input';
 import { X, Send, Timer, AlertTriangle } from 'lucide-react';
 import { chatApi, ChatMessage as ApiChatMessage } from '@/api/chat';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { useToast } from '@/hooks/use-toast';
+import { soundManager } from '@/utils/soundManager';
 
 const EphemeralChat = () => {
   const { activeChatId, setActiveChatId, chatRequests, activeSessions, setActiveSessions, currentSceneId, setShowInbox } = useApp();
@@ -16,6 +18,7 @@ const EphemeralChat = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const { subscribe } = useWebSocket(currentSceneId);
+  const { toast } = useToast();
 
   // Find the active session using request_id
   const session = activeSessions.find(s => s.request_id === activeChatId);
@@ -49,6 +52,12 @@ const EphemeralChat = () => {
           if (prev.some(m => m.id === data.message_id || (data.nonce && m.id === data.nonce))) return prev;
 
           const isMe = data.from_scene_id === currentSceneId;
+          
+          // Play sound for incoming messages (not our own)
+          if (!isMe) {
+            soundManager.playIncomingMessage();
+          }
+          
           const newMsg: ChatMessage = {
             id: data.message_id,
             senderId: isMe ? 'me' : 'other',
@@ -63,7 +72,11 @@ const EphemeralChat = () => {
     // Subscribe to chat expiration
     const unsubscribeExpired = subscribe('chat.expired', (data) => {
       if (data.request_id === activeChatId) {
-        alert('Chat has expired. Messages have been deleted.');
+        toast({
+          variant: 'destructive',
+          title: 'Chat Expired',
+          description: 'This chat has expired and messages have been deleted.',
+        });
         handleClose();
       }
     });
@@ -124,7 +137,11 @@ const EphemeralChat = () => {
       setTimeLeft(remaining);
 
       if (remaining <= 0) {
-        alert('Chat has expired!');
+        toast({
+          variant: 'destructive',
+          title: 'Time\'s Up!',
+          description: 'Your chat session has expired.',
+        });
         handleClose();
       }
     }, 1000);
@@ -151,6 +168,9 @@ const EphemeralChat = () => {
 
   const handleSend = async () => {
     if (!inputText.trim() || !activeChatId) return;
+
+    // Play outgoing message sound
+    soundManager.playOutgoingMessage();
 
     // Optimistically add message
     const nonce = crypto.randomUUID();
@@ -186,7 +206,11 @@ const EphemeralChat = () => {
       console.error('Failed to send message:', error);
       // Remove temp message on error
       setMessages(prev => prev.filter(m => m.id !== nonce));
-      alert('Failed to send message');
+      toast({
+        variant: 'destructive',
+        title: 'Failed to Send',
+        description: 'Could not send your message. Please try again.',
+      });
     }
   };
 
@@ -245,7 +269,7 @@ const EphemeralChat = () => {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-safe">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3 pb-24">
         {messages.map((message) => (
           <motion.div
             key={message.id}
@@ -266,8 +290,8 @@ const EphemeralChat = () => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
-      <div className="p-4 border-t border-border bg-card">
+      {/* Input - Sticky at bottom */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 border-t border-border bg-card safe-area-inset-bottom z-10">
         <div className="flex items-center gap-2">
           <Input
             ref={inputRef}
@@ -275,10 +299,8 @@ const EphemeralChat = () => {
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
             onFocus={() => {
-              // Additional scroll on focus for mobile
-              setTimeout(() => {
-                inputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              }, 100);
+              // Prevent any scroll behavior when input is focused on mobile
+              // Input will stay fixed at bottom
             }}
             placeholder="Type a message..."
             className="flex-1 bg-muted border-border focus:ring-primary"
