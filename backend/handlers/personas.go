@@ -31,16 +31,54 @@ func GetOrCreatePersona(c *gin.Context) {
 	}
 	log.Printf("👤 Persona request for name: %s (UserID: %v)", req.Name, userID)
 
-	// CRITICAL: Check if user actually exists in the users table
-	// This prevents the foreign key constraint violation (500 error)
-	var userExists bool
-	err := config.DB.QueryRow(`SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)`, userID).Scan(&userExists)
+	// OPTIMIZED: Single query to check user existence, name uniqueness, and get existing persona
+	// This reduces 3 database round trips to just 1
+	var (
+		userExists   bool
+		nameTaken    bool
+		personaID    sql.NullString
+		personaName  sql.NullString
+		avatarURL    sql.NullString
+		description  sql.NullString
+		stats        sql.NullString
+		isActive     sql.NullBool
+		createdAt    sql.NullTime
+		updatedAt    sql.NullTime
+	)
+
+	query := `
+		WITH user_check AS (
+			SELECT EXISTS(SELECT 1 FROM users WHERE id = $1) AS exists
+		),
+		name_check AS (
+			SELECT EXISTS(SELECT 1 FROM personas WHERE LOWER(name) = LOWER($2) AND id != $1) AS taken
+		),
+		existing_persona AS (
+			SELECT id, user_id, name, avatar_url, description, stats, is_active, created_at, updated_at
+			FROM personas
+			WHERE id = $1
+			LIMIT 1
+		)
+		SELECT 
+			(SELECT exists FROM user_check) AS user_exists,
+			(SELECT taken FROM name_check) AS name_taken,
+			ep.id, ep.name, ep.avatar_url, ep.description, ep.stats, ep.is_active, ep.created_at, ep.updated_at
+		FROM user_check, name_check
+		LEFT JOIN existing_persona ep ON TRUE
+	`
+
+	err := config.DB.QueryRow(query, userID, req.Name).Scan(
+		&userExists, &nameTaken,
+		&personaID, &personaName, &avatarURL, &description, &stats, &isActive, &createdAt, &updatedAt,
+	)
+
 	if err != nil {
-		log.Printf("❌ Failed to check user existence: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error checking user"})
+		log.Printf("❌ Failed to query persona data: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
 		return
 	}
 
+	// Check user existence
 	if !userExists {
 		log.Printf("⚠️ UserID %v from token does not exist in database! (Stale token?)", userID)
 		c.JSON(http.StatusUnauthorized, gin.H{
@@ -50,20 +88,7 @@ func GetOrCreatePersona(c *gin.Context) {
 		return
 	}
 
-	// Check uniqueness of persona name across ALL users (ignore case maybe? let's stick to exact for now or ILIKE)
-	// We use ILIKE for case-insensitive uniqueness to avoid "Neo" vs "neo" confusion
-	var nameTaken bool
-	err = config.DB.QueryRow(
-		`SELECT EXISTS(SELECT 1 FROM personas WHERE name ILIKE $1 AND id != $2)`,
-		req.Name, userID,
-	).Scan(&nameTaken)
-
-	if err != nil {
-		log.Printf("❌ Failed to check name uniqueness: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error checking name"})
-		return
-	}
-
+	// Check name uniqueness
 	if nameTaken {
 		c.JSON(http.StatusConflict, gin.H{
 			"error": "Persona name '" + req.Name + "' is already taken. Please choose another.",
@@ -72,18 +97,40 @@ func GetOrCreatePersona(c *gin.Context) {
 		return
 	}
 
-	// Check if user already has a persona (using userID as personaID)
 	var persona models.Persona
-	err = config.DB.QueryRow(
-		`SELECT id, user_id, name, avatar_url, description, stats, is_active, created_at, updated_at
-		 FROM personas
-		 WHERE id = $1
-		 LIMIT 1`,
-		userID,
-	).Scan(&persona.ID, &persona.UserID, &persona.Name, &persona.AvatarURL, &persona.Description,
-		&persona.Stats, &persona.IsActive, &persona.CreatedAt, &persona.UpdatedAt)
 
-	if err == sql.ErrNoRows {
+	// Check if persona exists
+	if personaID.Valid {
+		// Update existing persona
+		persona = models.Persona{
+			ID:          userID,
+			UserID:      userID,
+			Name:        req.Name,
+			AvatarURL:   req.AvatarURL,
+			Description: req.Description,
+			Stats:       models.JSONB{},
+			IsActive:    true,
+			CreatedAt:   createdAt.Time,
+			UpdatedAt:   time.Now(),
+		}
+
+		if stats.Valid {
+			persona.Stats = models.JSONB(stats.String)
+		}
+
+		_, err = config.DB.Exec(
+			`UPDATE personas SET name = $1, avatar_url = $2, description = $3, updated_at = $4 WHERE id = $5`,
+			persona.Name, persona.AvatarURL, persona.Description, persona.UpdatedAt, persona.ID,
+		)
+
+		if err != nil {
+			log.Printf("❌ Failed to update persona: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update persona"})
+			return
+		}
+
+		log.Printf("✓ Updated persona %s for user %s", persona.Name, userID)
+	} else {
 		// Create new persona with ID = userID
 		persona = models.Persona{
 			ID:          userID,
@@ -105,35 +152,12 @@ func GetOrCreatePersona(c *gin.Context) {
 		)
 
 		if err != nil {
-			log.Printf("Failed to create persona: %v", err)
+			log.Printf("❌ Failed to create persona: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create persona"})
 			return
 		}
 
 		log.Printf("✓ Created persona %s for user %s", persona.Name, userID)
-	} else if err == nil {
-		// Update existing persona
-		persona.Name = req.Name
-		persona.AvatarURL = req.AvatarURL
-		persona.Description = req.Description
-		persona.UpdatedAt = time.Now()
-
-		_, err = config.DB.Exec(
-			`UPDATE personas SET name = $1, avatar_url = $2, description = $3, updated_at = $4 WHERE id = $5`,
-			persona.Name, persona.AvatarURL, persona.Description, persona.UpdatedAt, persona.ID,
-		)
-
-		if err != nil {
-			log.Printf("Failed to update persona: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update persona"})
-			return
-		}
-
-		log.Printf("✓ Updated persona %s for user %s", persona.Name, userID)
-	} else {
-		log.Printf("Failed to query persona: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get persona"})
-		return
 	}
 
 	log.Printf("📤 Returning persona: %+v", persona)

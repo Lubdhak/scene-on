@@ -154,6 +154,7 @@ func runMigrations() error {
 		`CREATE INDEX IF NOT EXISTS idx_scenes_location ON scenes(latitude, longitude)`,
 		`CREATE INDEX IF NOT EXISTS idx_scenes_active_expires ON scenes(is_active, expires_at) WHERE is_active = true`,
 		`CREATE INDEX IF NOT EXISTS idx_personas_user_active ON personas(user_id, is_active) WHERE is_active = true`,
+		`CREATE INDEX IF NOT EXISTS idx_personas_name_lower ON personas(LOWER(name))`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_requests_status ON chat_requests(status)`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_requests_expiration ON chat_requests(expires_at, status)`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_messages_request ON chat_messages(chat_request_id, created_at)`,
