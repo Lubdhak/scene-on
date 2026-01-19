@@ -197,6 +197,9 @@ func (h *Hub) sendBroadcast(broadcastMsg BroadcastMessage) {
 // BroadcastToNearby sends a message to all scenes within a geographic radius using PostGIS.
 // This is much more efficient than the in-memory distance calculations in sendBroadcast.
 func (h *Hub) BroadcastToNearby(msg Message, lat, lon, radiusMeters float64, excludeSceneID uuid.UUID) {
+	log.Printf("🌍 BroadcastToNearby called: type=%s, lat=%.6f, lon=%.6f, radius=%.0fm, exclude=%s", 
+		msg.Type, lat, lon, radiusMeters, excludeSceneID)
+	
 	// Query PostGIS for nearby active scenes
 	rows, err := config.DB.Query(`
 		SELECT DISTINCT s.id 
@@ -212,15 +215,18 @@ func (h *Hub) BroadcastToNearby(msg Message, lat, lon, radiusMeters float64, exc
 		excludeSceneID, lon, lat, radiusMeters,
 	)
 	if err != nil {
-		log.Printf("Failed to query nearby scenes: %v", err)
+		log.Printf("❌ Failed to query nearby scenes: %v", err)
 		return
 	}
 	defer rows.Close()
 	
 	// Send targeted messages to each nearby scene
+	sceneCount := 0
 	for rows.Next() {
 		var sceneID uuid.UUID
 		if err := rows.Scan(&sceneID); err == nil {
+			sceneCount++
+			log.Printf("📤 Sending %s to scene %s", msg.Type, sceneID)
 			// Use the existing Targeted channel for delivery
 			h.Targeted <- TargetedMessage{
 				TargetSceneID: sceneID,
@@ -230,8 +236,10 @@ func (h *Hub) BroadcastToNearby(msg Message, lat, lon, radiusMeters float64, exc
 	}
 	
 	if err := rows.Err(); err != nil {
-		log.Printf("Error iterating nearby scenes: %v", err)
+		log.Printf("❌ Error iterating nearby scenes: %v", err)
 	}
+	
+	log.Printf("✅ BroadcastToNearby completed: sent to %d scenes", sceneCount)
 }
 
 

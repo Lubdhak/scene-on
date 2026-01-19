@@ -115,8 +115,38 @@ func runMigrations() error {
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			scene_id UUID REFERENCES scenes(id) ON DELETE CASCADE,
 			content TEXT NOT NULL,
+			latitude DOUBLE PRECISION NOT NULL,
+			longitude DOUBLE PRECISION NOT NULL,
+			expires_at TIMESTAMPTZ NOT NULL,
 			created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 		)`,
+
+		// Add new columns to existing yells table (for upgrading from old schema)
+		`ALTER TABLE yells ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION`,
+		`ALTER TABLE yells ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION`,
+		`ALTER TABLE yells ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`,
+		
+		// Update existing rows with default values (copy from scenes table and set expiration)
+		`UPDATE yells SET 
+			latitude = COALESCE(yells.latitude, s.latitude),
+			longitude = COALESCE(yells.longitude, s.longitude),
+			expires_at = COALESCE(yells.expires_at, yells.created_at + INTERVAL '5 minutes')
+		FROM scenes s 
+		WHERE yells.scene_id = s.id AND (yells.latitude IS NULL OR yells.longitude IS NULL OR yells.expires_at IS NULL)`,
+
+		// Make columns NOT NULL after setting defaults (will only succeed if no NULL values remain)
+		`DO $$ 
+		BEGIN
+			IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='yells' AND column_name='latitude' AND is_nullable='YES') THEN
+				ALTER TABLE yells ALTER COLUMN latitude SET NOT NULL;
+			END IF;
+			IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='yells' AND column_name='longitude' AND is_nullable='YES') THEN
+				ALTER TABLE yells ALTER COLUMN longitude SET NOT NULL;
+			END IF;
+			IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='yells' AND column_name='expires_at' AND is_nullable='YES') THEN
+				ALTER TABLE yells ALTER COLUMN expires_at SET NOT NULL;
+			END IF;
+		END $$`,
 
 		`CREATE TABLE IF NOT EXISTS chat_requests (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -161,6 +191,10 @@ func runMigrations() error {
 		`CREATE INDEX IF NOT EXISTS idx_personas_user_active ON personas(user_id, is_active) WHERE is_active = true`,
 		`CREATE INDEX IF NOT EXISTS idx_personas_name_lower ON personas(LOWER(name))`,
 		`CREATE INDEX IF NOT EXISTS idx_yells_scene_id ON yells(scene_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_yells_location ON yells(latitude, longitude)`,
+		`CREATE INDEX IF NOT EXISTS idx_yells_expires_at ON yells(expires_at)`,
+		// GIST spatial index for efficient ST_DWithin queries on yells
+		`CREATE INDEX IF NOT EXISTS idx_yells_geography ON yells USING GIST (ST_MakePoint(longitude, latitude))`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_requests_status ON chat_requests(status)`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_requests_from_scene ON chat_requests(from_scene_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_requests_to_scene ON chat_requests(to_scene_id)`,

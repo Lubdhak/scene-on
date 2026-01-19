@@ -167,16 +167,33 @@ func StopScene(wsHub *websocket.Hub) gin.HandlerFunc {
 			return
 		}
 
-		// Optimize: Single CTE query to delete yells, chat_requests and deactivate scene
-		_, err = config.DB.Exec(
-			`WITH 
-				delete_yells AS (DELETE FROM yells WHERE scene_id = $1),
-				delete_chat_requests AS (DELETE FROM chat_requests WHERE from_scene_id = $1 OR to_scene_id = $1)
-			 UPDATE scenes SET is_active = false WHERE id = $1`,
-			sceneID,
-		)
+		// Delete yells and chat_requests, then deactivate scene
+		log.Printf("🧹 Stopping scene %s - deleting associated data", sceneID)
+		
+		// Delete yells
+		result, err := config.DB.Exec(`DELETE FROM yells WHERE scene_id = $1`, sceneID)
 		if err != nil {
-			log.Printf("Failed to stop scene %s: %v", sceneID, err)
+			log.Printf("⚠️ Failed to delete yells for scene %s: %v", sceneID, err)
+		} else {
+			if rows, _ := result.RowsAffected(); rows > 0 {
+				log.Printf("✓ Deleted %d yells for scene %s", rows, sceneID)
+			}
+		}
+		
+		// Delete chat requests
+		result, err = config.DB.Exec(`DELETE FROM chat_requests WHERE from_scene_id = $1 OR to_scene_id = $1`, sceneID)
+		if err != nil {
+			log.Printf("⚠️ Failed to delete chat requests for scene %s: %v", sceneID, err)
+		} else {
+			if rows, _ := result.RowsAffected(); rows > 0 {
+				log.Printf("✓ Deleted %d chat requests for scene %s", rows, sceneID)
+			}
+		}
+		
+		// Deactivate scene
+		_, err = config.DB.Exec(`UPDATE scenes SET is_active = false WHERE id = $1`, sceneID)
+		if err != nil {
+			log.Printf("Failed to deactivate scene %s: %v", sceneID, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to stop scene"})
 			return
 		}

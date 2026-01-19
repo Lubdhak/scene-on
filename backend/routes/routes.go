@@ -95,8 +95,8 @@ func SetupRoutes(router *gin.Engine, wsHub *websocket.Hub) {
 			// Yells
 			yells := protected.Group("/yells")
 			{
-				yells.POST("", handlers.Ping) // TODO: Implement
-				yells.GET("/nearby", handlers.Ping) // TODO: Implement
+				yells.POST("/broadcast", handlers.BroadcastYell(wsHub))
+				yells.GET("/nearby", handlers.GetNearbyYells())
 			}
 
 			// Chat

@@ -1,12 +1,13 @@
 import { useRef, useEffect, useState, useMemo, memo, forwardRef, useCallback } from 'react';
-import { useApp, ChatRequest } from '@/context/AppContext';
+import { useApp, ChatRequest, YellMessage } from '@/context/AppContext';
 import { Button } from '@/components/ui/button';
-import { MessageCircle, MapPin, AlertCircle, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
+import { MessageCircle, MapPin, AlertCircle, ArrowUpRight, ArrowDownLeft, Megaphone } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { scenesApi } from '@/api/scenes';
 import { chatApi, ChatSession } from '@/api/chat';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { debounce } from '@/utils/debounce';
+import { soundManager } from '@/utils/soundManager';
 
 interface NearbyUser {
   sceneId: string;
@@ -26,13 +27,14 @@ const MapMarker = memo(forwardRef<HTMLDivElement, {
   isPendingSent: boolean;
   isPendingReceived: boolean;
   currentSceneId: string | null;
+  yell?: YellMessage;
   onClick: () => void;
   onMessageClick: () => void;
-}>(({
-  user, index, session, pendingMessage, isPendingSent, isPendingReceived, currentSceneId, onClick, onMessageClick
-}, ref) => {
+}>((props, ref) => {
+  const { user, index, session, pendingMessage, isPendingSent, isPendingReceived, currentSceneId, yell, onClick, onMessageClick } = props;
   const isActive = !!session;
   const [timeLeft, setTimeLeft] = useState<number>(0);
+  const [isYellExpanded, setIsYellExpanded] = useState(false);
   const totalDuration = 5 * 60; // 5 minutes in seconds
 
   useEffect(() => {
@@ -52,6 +54,23 @@ const MapMarker = memo(forwardRef<HTMLDivElement, {
 
   const progress = (timeLeft / totalDuration) * 100;
   const isUrgent = isActive && timeLeft < 60;
+
+  // Debug log for yell prop
+  useEffect(() => {
+    if (yell) {
+      console.log('🎯 MapMarker received yell prop for scene', user.sceneId, ':', yell.content);
+    }
+  }, [yell, user.sceneId]);
+
+  // Auto-collapse expanded yell after 5 seconds
+  useEffect(() => {
+    if (isYellExpanded) {
+      const timer = setTimeout(() => {
+        setIsYellExpanded(false);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [isYellExpanded]);
 
   // Determine message to display
   const displayMessage = session?.last_message_content || pendingMessage;
@@ -119,7 +138,7 @@ const MapMarker = memo(forwardRef<HTMLDivElement, {
         <div
           className={`
             absolute -top-16 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 transition-all duration-300 transform z-30
-            ${isActive || isPendingReceived ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 group-hover:-translate-y-1 pointer-events-none'}
+            ${isActive || isPendingReceived || yell ? 'opacity-100 pointer-events-auto' : 'opacity-0 group-hover:opacity-100 group-hover:-translate-y-1 pointer-events-none'}
           `}
           onClick={(e) => {
             if (isMessageClickable) {
@@ -128,6 +147,38 @@ const MapMarker = memo(forwardRef<HTMLDivElement, {
             }
           }}
         >
+          {/* Yell bubble - shows above message bubble */}
+          {yell && (
+            <motion.div
+              initial={{ scale: 0, y: -10 }}
+              animate={{ 
+                scale: 1, 
+                y: 0
+              }}
+              exit={{ scale: 0, y: -10 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (yell.content.length > 30) {
+                  setIsYellExpanded(!isYellExpanded);
+                }
+              }}
+              className={`relative bg-accent text-accent-foreground border border-accent/50 px-3 py-2 rounded-2xl shadow-2xl animate-in fade-in zoom-in duration-500 mb-1 ring-2 ring-accent/30 ${
+                isYellExpanded ? 'max-w-[320px]' : 'max-w-[240px]'
+              } ${
+                yell.content.length > 30 ? 'cursor-pointer hover:ring-accent/50' : ''
+              }`}
+            >
+              <Megaphone className="absolute top-2 left-2 w-3 h-3 shrink-0" />
+              <span className={`text-sm font-medium leading-tight block pl-5 ${
+                isYellExpanded ? 'whitespace-normal' : 'truncate'
+              }`}>
+                {yell.content}
+              </span>
+            </motion.div>
+          )}
+          
+          {/* Message bubble */}
           {displayMessage && (
             <div className={`
               bg-card/95 border px-2 py-1.5 rounded-xl shadow-xl flex items-center gap-1.5 max-w-[160px] animate-in fade-in zoom-in duration-300 cursor-pointer hover:scale-105 active:scale-95 transition-transform
@@ -166,7 +217,7 @@ const MapContainer = () => {
     mapboxToken, selectedPersona, isSceneActive, currentYell, authState,
     sentChatRequests, setSentChatRequests, activeSessions, setActiveSessions,
     chatRequests, setChatRequests, setActiveChatId, currentSceneId, setShowInbox,
-    setUnreadSessionIds, distanceRadius
+    setUnreadSessionIds, distanceRadius, receivedYells, setReceivedYells
   } = useApp();
   // ... (keeping other state)
   const [mapError, setMapError] = useState(false);
@@ -176,12 +227,26 @@ const MapContainer = () => {
   const [selectedUser, setSelectedUser] = useState<NearbyUser | null>(null);
   const [inviteMessage, setInviteMessage] = useState('');
   const [sendingRequest, setSendingRequest] = useState(false);
+  const lastYellNotificationTime = useRef<Map<string, number>>(new Map());
+  const [isOwnYellExpanded, setIsOwnYellExpanded] = useState(false);
 
-  const { subscribe } = useWebSocket();
+  const { subscribe } = useWebSocket(currentSceneId);
 
-  // WebSocket subscriptions for real-time removal
+  // Auto-collapse own yell after 5 seconds
   useEffect(() => {
-    console.log('📡 Setting up WebSocket subscription for scene.ended');
+    if (isOwnYellExpanded) {
+      const timer = setTimeout(() => {
+        setIsOwnYellExpanded(false);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [isOwnYellExpanded]);
+
+  // WebSocket subscriptions for real-time events
+  useEffect(() => {
+    console.log('📡 Setting up WebSocket subscriptions');
+    
+    // Scene ended subscription
     const unsubscribeEnded = subscribe('scene.ended', (data) => {
       const { scene_id } = data;
       console.log('🎭 REAL-TIME: Scene ended received via WS:', scene_id);
@@ -190,12 +255,87 @@ const MapContainer = () => {
         console.log(`📉 Nearby users count: ${prev.length} -> ${filtered.length}`);
         return filtered;
       });
+      // Remove yells from ended scenes
+      setReceivedYells(prev => {
+        const updated = new Map(prev);
+        updated.delete(scene_id);
+        return updated;
+      });
+    });
+
+    // Yell broadcast subscription
+    const unsubscribeYell = subscribe('yell_broadcast', (data) => {
+      const { id, scene_id, content, persona_name, persona_avatar, latitude, longitude, expires_at, created_at } = data;
+      console.log('📢 YELL received via WebSocket:', { scene_id, content, persona_name });
+
+      // Don't show our own yells (they're shown via currentYell)
+      if (scene_id === currentSceneId) {
+        console.log('⏭️ Skipping own yell (displayed via currentYell)');
+        return;
+      }
+
+      // Throttle notifications per scene (max 1 every 30 seconds)
+      const now = Date.now();
+      const lastNotification = lastYellNotificationTime.current.get(scene_id) || 0;
+      if (now - lastNotification > 30000) {
+        console.log('🔔 Playing yell notification sound');
+        soundManager.playYellNotification();
+        lastYellNotificationTime.current.set(scene_id, now);
+      } else {
+        console.log('🔕 Notification throttled for scene', scene_id);
+      }
+
+      // Store the yell
+      const yellData: YellMessage = {
+        id,
+        scene_id,
+        content,
+        persona_name,
+        persona_avatar,
+        latitude,
+        longitude,
+        timestamp: new Date(created_at * 1000),
+        expires_at: new Date(expires_at * 1000),
+      };
+
+      console.log('💾 Storing yell for scene:', scene_id, yellData);
+      setReceivedYells(prev => {
+        const updated = new Map(prev);
+        updated.set(scene_id, yellData);
+        console.log('📊 Total received yells:', updated.size);
+        return updated;
+      });
     });
 
     return () => {
       unsubscribeEnded();
+      unsubscribeYell();
     };
-  }, [subscribe]);
+  }, [subscribe, currentSceneId, setReceivedYells]);
+
+  // Periodic cleanup of expired yells (every 30 seconds)
+  useEffect(() => {
+    const cleanupExpiredYells = () => {
+      const now = new Date();
+      setReceivedYells(prev => {
+        const updated = new Map(prev);
+        let removed = 0;
+        for (const [sceneId, yell] of updated.entries()) {
+          if (yell.expires_at < now) {
+            updated.delete(sceneId);
+            removed++;
+          }
+        }
+        if (removed > 0) {
+          console.log(`🧹 Cleaned up ${removed} expired yells`);
+        }
+        return updated;
+      });
+    };
+
+    const interval = setInterval(cleanupExpiredYells, 30000);
+    return () => clearInterval(interval);
+  }, [setReceivedYells]);
 
   // Fetch nearby scenes when scene is active or when distance radius changes
   // Memoize the fetch function to prevent recreating on every render
@@ -203,7 +343,9 @@ const MapContainer = () => {
     if (!isSceneActive || !userLocation) return;
 
     try {
+      console.log('🔍 Fetching nearby scenes at location:', userLocation, 'radius:', distanceRadius);
       const scenes = await scenesApi.getNearbyScenes(userLocation.lat, userLocation.lng, distanceRadius);
+      console.log('📍 Nearby scenes fetched:', scenes.length, scenes);
 
       // Transform scenes to nearby users format
       const users: NearbyUser[] = scenes.map((scene: any) => ({
@@ -216,9 +358,10 @@ const MapContainer = () => {
         longitude: scene.longitude,
       }));
 
+      console.log('👥 Setting nearby users:', users.length);
       setNearbyUsers(users);
     } catch (error) {
-      console.error('Failed to fetch nearby scenes:', error);
+      console.error('❌ Failed to fetch nearby scenes:', error);
     }
   }, [isSceneActive, userLocation, distanceRadius]);
 
@@ -465,62 +608,95 @@ const MapContainer = () => {
                 {selectedPersona?.avatar}
               </div>
               {/* Location pin indicator */}
-              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2">
+              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 pointer-events-none">
                 <MapPin className="w-5 h-5 text-primary fill-primary" />
               </div>
-              {currentYell && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10, scale: 0.8 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  className="absolute -top-16 left-1/2 -translate-x-1/2 px-3 py-2 rounded-lg bg-accent text-accent-foreground text-sm font-medium whitespace-nowrap max-w-48 truncate yell-appear"
-                >
-                  {currentYell.text}
-                </motion.div>
-              )}
             </div>
+            
+            {/* Yell bubble - positioned separately to not affect avatar layout */}
+            {currentYell && (
+              <motion.div
+                initial={{ opacity: 0, y: 10, scale: 0.8 }}
+                animate={{ 
+                  opacity: 1, 
+                  y: 0, 
+                  scale: 1
+                }}
+                transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (currentYell.content.length > 30) {
+                    setIsOwnYellExpanded(!isOwnYellExpanded);
+                  }
+                }}
+                className={`absolute -top-12 left-1/2 -translate-x-1/2 bg-accent text-accent-foreground border border-accent/50 px-3 py-2 rounded-2xl shadow-2xl ring-2 ring-accent/30 z-10 ${
+                  isOwnYellExpanded ? 'max-w-[320px] whitespace-normal' : 'max-w-[240px] whitespace-nowrap truncate'
+                } ${
+                  currentYell.content.length > 30 ? 'cursor-pointer hover:ring-accent/50' : ''
+                }`}
+              >
+                <span className={`text-sm font-medium leading-tight block ${
+                  isOwnYellExpanded ? 'whitespace-normal' : 'truncate'
+                }`}>
+                  {currentYell.content}
+                </span>
+              </motion.div>
+            )}
           </motion.div>
 
           {/* Real nearby users */}
           <AnimatePresence mode="popLayout">
-            {nearbyUsers.map((user, index) => {
-              const session = activeSessions.find(s => s.from_scene_id === user.sceneId || s.to_scene_id === user.sceneId);
+            {(() => {
+              console.log('🗺️ Rendering map - Nearby users:', nearbyUsers.length, 'Received yells:', receivedYells.size);
+              console.log('🗺️ ReceivedYells Map:', Array.from(receivedYells.entries()).map(([k, v]) => ({ sceneId: k, content: v.content })));
+              return nearbyUsers.map((user, index) => {
+                const session = activeSessions.find(s => s.from_scene_id === user.sceneId || s.to_scene_id === user.sceneId);
 
-              const pendingSentReq = sentChatRequests.find(r => r.fromPersona.id === user.sceneId && r.status === 'pending');
-              const isPendingSent = !!pendingSentReq;
+                const pendingSentReq = sentChatRequests.find(r => r.fromPersona.id === user.sceneId && r.status === 'pending');
+                const isPendingSent = !!pendingSentReq;
 
-              const pendingReceivedReq = chatRequests.find(r => r.fromPersona.id === user.sceneId && r.status === 'pending');
-              const isPendingReceived = !!pendingReceivedReq;
+                const pendingReceivedReq = chatRequests.find(r => r.fromPersona.id === user.sceneId && r.status === 'pending');
+                const isPendingReceived = !!pendingReceivedReq;
 
-              // Determine pending message to show
-              // If we received a request, show their message
-              // If we sent a request, maybe show our message? Or nothing. User said "msg sent during request".
-              // Let's show received message if available, else sent message.
-              const pendingMessage = pendingReceivedReq?.message || pendingSentReq?.message;
+                // Determine pending message to show
+                // If we received a request, show their message
+                // If we sent a request, maybe show our message? Or nothing. User said "msg sent during request".
+                // Let's show received message if available, else sent message.
+                const pendingMessage = pendingReceivedReq?.message || pendingSentReq?.message;
 
-              return (
-                <MapMarker
-                  key={user.sceneId}
-                  user={user}
-                  index={index}
-                  session={session}
-                  pendingMessage={pendingMessage}
-                  isPendingSent={isPendingSent}
-                  isPendingReceived={isPendingReceived}
-                  currentSceneId={currentSceneId}
-                  onClick={() => setSelectedUser(user)}
-                  onMessageClick={() => {
-                    // Direct action when clicking the message bubble
-                    if (session) {
-                      setUnreadSessionIds(prev => prev.filter(id => id !== session.request_id));
-                      setActiveChatId(session.request_id);
-                    } else {
-                      // For pending, just open the user profile for Accept/Reject
-                      setSelectedUser(user);
-                    }
-                  }}
-                />
-              );
-            })}
+                // Get yell for this scene
+                const yell = receivedYells.get(user.sceneId);
+                
+                if (yell) {
+                  console.log('🎯 Displaying yell for scene', user.sceneId, ':', yell.content);
+                }
+
+                return (
+                  <MapMarker
+                    key={user.sceneId}
+                    user={user}
+                    index={index}
+                    session={session}
+                    pendingMessage={pendingMessage}
+                    isPendingSent={isPendingSent}
+                    isPendingReceived={isPendingReceived}
+                    currentSceneId={currentSceneId}
+                    yell={yell}
+                    onClick={() => setSelectedUser(user)}
+                    onMessageClick={() => {
+                      // Direct action when clicking the message bubble
+                      if (session) {
+                        setUnreadSessionIds(prev => prev.filter(id => id !== session.request_id));
+                        setActiveChatId(session.request_id);
+                      } else {
+                        // For pending, just open the user profile for Accept/Reject
+                        setSelectedUser(user);
+                      }
+                    }}
+                  />
+                );
+              });
+            })()}
           </AnimatePresence>
         </div>
       )}

@@ -98,11 +98,40 @@ class SoundManager {
   }
   
   /**
+   * Play notification sound for yell broadcasts
+   * Triple-tone ascending pattern (400Hz → 600Hz → 800Hz)
+   */
+  async playYellNotification() {
+    await this.ensureAudioContext();
+    if (!this.audioContext || this.isMuted || this.volume === 0) return;
+    
+    // Triple ascending tone pattern
+    await this.playTone(400, 0.15, 'sine', false);
+    setTimeout(() => this.playTone(600, 0.15, 'sine', false), 150);
+    setTimeout(() => this.playTone(800, 0.2, 'sine'), 300);
+  }
+  
+  /**
    * Play sound for outgoing chat messages
    * Subtle confirmation sound
    */
   async playOutgoingMessage() {
     await this.playTone(440, 0.08, 'sine');
+  }
+
+  /**
+   * Play sound for yell broadcasts
+   * Triple-tone ascending pattern: 400Hz → 600Hz → 800Hz
+   * Creates an attention-grabbing broadcast notification
+   */
+  async playYellNotification() {
+    await this.ensureAudioContext();
+    if (!this.audioContext || this.isMuted || this.volume === 0) return;
+
+    // Triple ascending tone pattern
+    await this.playTone(400, 0.15, 'sine', false);
+    setTimeout(() => this.playTone(600, 0.15, 'sine', false), 160);
+    setTimeout(() => this.playTone(800, 0.2, 'sine'), 320);
   }
   
   /**

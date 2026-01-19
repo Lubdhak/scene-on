@@ -61,6 +61,9 @@ func main() {
 	// Run cleanup once at boot
 	handlers.RunBootCleanup(wsHub)
 
+	// Start periodic cleanup worker (runs every 1 minute)
+	go handlers.RunPeriodicCleanup(wsHub)
+
 	// ---- GIN MODE ----
 	ginMode := os.Getenv("GIN_MODE")
 	if ginMode == "" {

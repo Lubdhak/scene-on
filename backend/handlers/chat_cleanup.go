@@ -4,6 +4,7 @@ import (
 	"log"
 	"scene-on/backend/config"
 	"scene-on/backend/websocket"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -27,6 +28,31 @@ func RunBootCleanup(wsHub *websocket.Hub) {
 	cleanupExpiredChats(wsHub)
 	
 	log.Println("✅ Boot cleanup completed")
+}
+
+// RunPeriodicCleanup runs cleanup tasks every minute for all expired data
+func RunPeriodicCleanup(wsHub *websocket.Hub) {
+	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
+
+	log.Println("🔄 Starting periodic cleanup worker (1 minute interval)...")
+
+	for range ticker.C {
+		// Clean up expired chats (includes scenes and old requests)
+		cleanupExpiredChats(wsHub)
+
+		// Clean up expired yells
+		result, err := config.DB.Exec(`
+			DELETE FROM yells
+			WHERE expires_at < NOW()
+		`)
+
+		if err != nil {
+			log.Printf("Failed to cleanup expired yells: %v", err)
+		} else if rowsAffected, err := result.RowsAffected(); err == nil && rowsAffected > 0 {
+			log.Printf("✓ Cleaned up %d expired yells", rowsAffected)
+		}
+	}
 }
 
 func cleanupExpiredChats(wsHub *websocket.Hub) {

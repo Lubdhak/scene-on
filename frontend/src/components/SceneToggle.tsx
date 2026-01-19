@@ -3,9 +3,10 @@ import { useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { Power } from 'lucide-react';
 import { scenesApi } from '@/api/scenes';
+import { yellsApi } from '@/api/yells';
 
 const SceneToggle = () => {
-  const { isSceneActive, setIsSceneActive, setCurrentYell, setChatRequests, setCurrentSceneId, setSentChatRequests, selectedPersona, setSelectedPersona, setActiveChatId, setShowInbox } = useApp();
+  const { isSceneActive, setIsSceneActive, setCurrentYell, setChatRequests, setCurrentSceneId, setSentChatRequests, selectedPersona, setSelectedPersona, setActiveChatId, setShowInbox, setReceivedYells } = useApp();
   const [isLoading, setIsLoading] = useState(false);
 
   const handleToggle = async () => {
@@ -63,6 +64,29 @@ const SceneToggle = () => {
                 );
                 setIsSceneActive(true);
                 setCurrentSceneId(scene.id);
+                
+                // Fetch nearby active yells
+                try {
+                  const { yells } = await yellsApi.getNearby();
+                  const yellsMap = new Map();
+                  yells.forEach(yell => {
+                    yellsMap.set(yell.scene_id, {
+                      id: yell.id,
+                      scene_id: yell.scene_id,
+                      content: yell.content,
+                      persona_name: yell.persona_name || '',
+                      persona_avatar: yell.persona_avatar || '',
+                      latitude: yell.latitude,
+                      longitude: yell.longitude,
+                      timestamp: new Date(yell.created_at * 1000),
+                      expires_at: new Date(yell.expires_at * 1000),
+                    });
+                  });
+                  setReceivedYells(yellsMap);
+                  console.log(`📢 Loaded ${yells.length} nearby active yells`);
+                } catch (error) {
+                  console.error('Failed to fetch nearby yells:', error);
+                }
               } catch (error: any) {
                 console.error('Failed to start scene:', error);
                 console.error('Error response:', error.response?.data);
@@ -75,8 +99,32 @@ const SceneToggle = () => {
               console.error('Failed to get location:', error);
               // Use default location if permission denied
               scenesApi.startScene(selectedPersona.id, 40.7128, -74.006)
-                .then(() => {
+                .then(async (scene) => {
                   setIsSceneActive(true);
+                  setCurrentSceneId(scene.id);
+                  
+                  // Fetch nearby active yells
+                  try {
+                    const { yells } = await yellsApi.getNearby();
+                    const yellsMap = new Map();
+                    yells.forEach(yell => {
+                      yellsMap.set(yell.scene_id, {
+                        id: yell.id,
+                        scene_id: yell.scene_id,
+                        content: yell.content,
+                        persona_name: yell.persona_name || '',
+                        persona_avatar: yell.persona_avatar || '',
+                        latitude: yell.latitude,
+                        longitude: yell.longitude,
+                        timestamp: new Date(yell.created_at * 1000),
+                        expires_at: new Date(yell.expires_at * 1000),
+                      });
+                    });
+                    setReceivedYells(yellsMap);
+                    console.log(`📢 Loaded ${yells.length} nearby active yells`);
+                  } catch (error) {
+                    console.error('Failed to fetch nearby yells:', error);
+                  }
                 })
                 .catch((err: any) => {
                   console.error('Failed to start scene:', err);
@@ -89,8 +137,33 @@ const SceneToggle = () => {
           );
         } else {
           // Geolocation not supported, use default
-          await scenesApi.startScene(selectedPersona.id, 40.7128, -74.006);
+          const scene = await scenesApi.startScene(selectedPersona.id, 40.7128, -74.006);
           setIsSceneActive(true);
+          setCurrentSceneId(scene.id);
+          
+          // Fetch nearby active yells
+          try {
+            const { yells } = await yellsApi.getNearby();
+            const yellsMap = new Map();
+            yells.forEach(yell => {
+              yellsMap.set(yell.scene_id, {
+                id: yell.id,
+                scene_id: yell.scene_id,
+                content: yell.content,
+                persona_name: yell.persona_name || '',
+                persona_avatar: yell.persona_avatar || '',
+                latitude: yell.latitude,
+                longitude: yell.longitude,
+                timestamp: new Date(yell.created_at * 1000),
+                expires_at: new Date(yell.expires_at * 1000),
+              });
+            });
+            setReceivedYells(yellsMap);
+            console.log(`📢 Loaded ${yells.length} nearby active yells`);
+          } catch (error) {
+            console.error('Failed to fetch nearby yells:', error);
+          }
+          
           setIsLoading(false);
         }
       } catch (error: any) {

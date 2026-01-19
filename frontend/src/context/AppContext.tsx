@@ -12,8 +12,14 @@ export interface Persona {
 
 export interface YellMessage {
   id: string;
-  text: string;
+  scene_id: string;
+  content: string;
   timestamp: Date;
+  expires_at: Date;
+  persona_name?: string;
+  persona_avatar?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface ChatRequest {
@@ -44,6 +50,10 @@ interface AppContextType {
   setIsSceneActive: (active: boolean) => void;
   currentYell: YellMessage | null;
   setCurrentYell: (yell: YellMessage | null) => void;
+  receivedYells: Map<string, YellMessage>; // sceneId -> YellMessage
+  setReceivedYells: React.Dispatch<React.SetStateAction<Map<string, YellMessage>>>;
+  nextYellAt: number | null;
+  setNextYellAt: (timestamp: number | null) => void;
   chatRequests: ChatRequest[];
   setChatRequests: React.Dispatch<React.SetStateAction<ChatRequest[]>>;
   activeChatId: string | null;
@@ -82,7 +92,49 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   });
   const [isSceneActive, setIsSceneActive] = useState(false);
-  const [currentYell, setCurrentYell] = useState<YellMessage | null>(null);
+  const [currentYell, setCurrentYell] = useState<YellMessage | null>(() => {
+    try {
+      const stored = localStorage.getItem('currentYell');
+      if (stored) {
+        const yell = JSON.parse(stored);
+        // Check if expired
+        if (new Date(yell.expires_at) > new Date()) {
+          return {
+            ...yell,
+            timestamp: new Date(yell.timestamp),
+            expires_at: new Date(yell.expires_at),
+          };
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  });
+  const [receivedYells, setReceivedYells] = useState<Map<string, YellMessage>>(() => {
+    try {
+      const stored = localStorage.getItem('receivedYells');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        const yellsMap = new Map<string, YellMessage>();
+        // Filter out expired yells on load
+        parsed.forEach(([sceneId, yell]: [string, any]) => {
+          if (new Date(yell.expires_at) > new Date()) {
+            yellsMap.set(sceneId, {
+              ...yell,
+              timestamp: new Date(yell.timestamp),
+              expires_at: new Date(yell.expires_at),
+            });
+          }
+        });
+        return yellsMap;
+      }
+      return new Map();
+    } catch {
+      return new Map();
+    }
+  });
+  const [nextYellAt, setNextYellAt] = useState<number | null>(null);
   const [chatRequests, setChatRequests] = useState<ChatRequest[]>([]);
   const [sentChatRequests, setSentChatRequests] = useState<ChatRequest[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
@@ -117,6 +169,79 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     localStorage.setItem('distanceRadius', distanceRadius.toString());
   }, [distanceRadius]);
 
+  // Persist currentYell to localStorage
+  useEffect(() => {
+    if (currentYell) {
+      localStorage.setItem('currentYell', JSON.stringify(currentYell));
+    } else {
+      localStorage.removeItem('currentYell');
+    }
+  }, [currentYell]);
+
+  // Persist receivedYells to localStorage (debounced)
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (receivedYells.size > 0) {
+        const serialized = JSON.stringify(Array.from(receivedYells.entries()));
+        localStorage.setItem('receivedYells', serialized);
+      } else {
+        localStorage.removeItem('receivedYells');
+      }
+    }, 500); // Debounce by 500ms
+
+    return () => clearTimeout(timeoutId);
+  }, [receivedYells]);
+
+  // Clean up expired currentYell
+  useEffect(() => {
+    if (!currentYell) return;
+
+    const checkExpiration = () => {
+      if (currentYell.expires_at < new Date()) {
+        setCurrentYell(null);
+      }
+    };
+
+    // Check immediately
+    checkExpiration();
+
+    // Check every 30 seconds
+    const interval = setInterval(checkExpiration, 30000);
+    return () => clearInterval(interval);
+  }, [currentYell]);
+
+  // Clean up expired receivedYells
+  useEffect(() => {
+    if (receivedYells.size === 0) return;
+
+    const checkExpiration = () => {
+      const now = new Date();
+      const expiredSceneIds: string[] = [];
+      
+      // First pass: identify expired yells without creating new Map
+      receivedYells.forEach((yell, sceneId) => {
+        if (yell.expires_at < now) {
+          expiredSceneIds.push(sceneId);
+        }
+      });
+
+      // Only update if there are expired yells
+      if (expiredSceneIds.length > 0) {
+        const updatedYells = new Map(receivedYells);
+        expiredSceneIds.forEach(sceneId => updatedYells.delete(sceneId));
+        setReceivedYells(updatedYells);
+        console.log(`🗑️ Removed ${expiredSceneIds.length} expired yells`);
+      }
+    };
+
+    // Check immediately
+    checkExpiration();
+
+    // Check every 30 seconds
+    const interval = setInterval(checkExpiration, 30000);
+    return () => clearInterval(interval);
+  }, [receivedYells]);
+
   const login = useCallback((auth: AuthState) => {
     setAuthState(auth);
     localStorage.setItem('auth', JSON.stringify(auth));
@@ -146,6 +271,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setSelectedPersona(null);
     setIsSceneActive(false);
     setCurrentYell(null);
+    setReceivedYells(new Map());
+    setNextYellAt(null);
     setChatRequests([]);
     setSentChatRequests([]);
     setActiveChatId(null);
@@ -157,6 +284,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     localStorage.removeItem('auth');
     localStorage.removeItem('accessToken');
     localStorage.removeItem('selectedPersona');
+    localStorage.removeItem('currentYell');
+    localStorage.removeItem('receivedYells');
   }, []);
 
   // Register logout handler for axios interceptor
@@ -175,6 +304,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         setSelectedPersona,
         isSceneActive,
         setIsSceneActive,
+        receivedYells,
+        setReceivedYells,
+        nextYellAt,
+        setNextYellAt,
         currentYell,
         setCurrentYell,
         chatRequests,

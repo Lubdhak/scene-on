@@ -67,6 +67,9 @@ type Yell struct {
 	ID        uuid.UUID `json:"id"`
 	SceneID   uuid.UUID `json:"scene_id"`
 	Content   string    `json:"content"`
+	Latitude  float64   `json:"latitude"`
+	Longitude float64   `json:"longitude"`
+	ExpiresAt time.Time `json:"expires_at"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
