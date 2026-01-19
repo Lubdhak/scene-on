@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { X, Send, Megaphone, Loader2, Clock } from 'lucide-react';
 import { yellsApi } from '@/api/yells';
 import { useToast } from '@/hooks/use-toast';
+import { soundManager } from '@/utils/soundManager';
 
 interface YellComposerProps {
   onClose: () => void;
@@ -28,6 +29,9 @@ const YellComposer = ({ onClose }: YellComposerProps) => {
 
   const handleSend = async () => {
     if (!text.trim() || isLoading || !canYell) return;
+
+    // Initialize audio on user interaction
+    soundManager.initialize();
 
     setIsLoading(true);
     try {

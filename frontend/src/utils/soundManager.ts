@@ -7,6 +7,7 @@ class SoundManager {
   private audioContext: AudioContext | null = null;
   private volume: number = 0.5; // Default volume (0-1)
   private isMuted: boolean = false;
+  private isInitialized: boolean = false;
   
   private readonly STORAGE_KEY = 'scene-on-volume';
   
@@ -17,24 +18,54 @@ class SoundManager {
       this.volume = parseFloat(savedVolume);
     }
     
-    // Initialize on user interaction (required by browsers)
-    this.initAudioContext();
+    // Set up listeners for user interaction to initialize audio
+    this.setupUserInteractionListeners();
+  }
+  
+  private setupUserInteractionListeners() {
+    const initAudio = () => {
+      if (!this.isInitialized) {
+        this.initAudioContext();
+        this.isInitialized = true;
+      }
+    };
+    
+    // Listen for first user interaction
+    const events = ['touchstart', 'touchend', 'mousedown', 'keydown', 'click'];
+    const handler = () => {
+      initAudio();
+      // Remove listeners after first interaction
+      events.forEach(event => {
+        document.removeEventListener(event, handler);
+      });
+    };
+    
+    events.forEach(event => {
+      document.addEventListener(event, handler, { once: true, passive: true });
+    });
   }
   
   private initAudioContext() {
     if (!this.audioContext) {
       try {
-        this.audioContext = new AudioContext();
+        this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       } catch (e) {
-        console.warn('Web Audio API not supported');
+        // Audio not supported
       }
     }
   }
   
   private async ensureAudioContext() {
-    this.initAudioContext();
+    if (!this.audioContext) {
+      this.initAudioContext();
+    }
+    
     if (this.audioContext?.state === 'suspended') {
-      await this.audioContext.resume();
+      try {
+        await this.audioContext.resume();
+      } catch (e) {
+        // Resume failed
+      }
     }
   }
   
@@ -99,28 +130,6 @@ class SoundManager {
   
   /**
    * Play notification sound for yell broadcasts
-   * Triple-tone ascending pattern (400Hz → 600Hz → 800Hz)
-   */
-  async playYellNotification() {
-    await this.ensureAudioContext();
-    if (!this.audioContext || this.isMuted || this.volume === 0) return;
-    
-    // Triple ascending tone pattern
-    await this.playTone(400, 0.15, 'sine', false);
-    setTimeout(() => this.playTone(600, 0.15, 'sine', false), 150);
-    setTimeout(() => this.playTone(800, 0.2, 'sine'), 300);
-  }
-  
-  /**
-   * Play sound for outgoing chat messages
-   * Subtle confirmation sound
-   */
-  async playOutgoingMessage() {
-    await this.playTone(440, 0.08, 'sine');
-  }
-
-  /**
-   * Play sound for yell broadcasts
    * Triple-tone ascending pattern: 400Hz → 600Hz → 800Hz
    * Creates an attention-grabbing broadcast notification
    */
@@ -135,11 +144,26 @@ class SoundManager {
   }
   
   /**
+   * Play sound for outgoing chat messages
+   * Subtle confirmation sound
+   */
+  async playOutgoingMessage() {
+    await this.playTone(440, 0.08, 'sine');
+  }
+  
+  /**
    * Set volume (0-1)
+   * Also ensures audio context is initialized
    */
   setVolume(volume: number) {
     this.volume = Math.max(0, Math.min(1, volume));
     localStorage.setItem(this.STORAGE_KEY, this.volume.toString());
+    
+    // Initialize audio context on volume change (user interaction)
+    if (!this.isInitialized) {
+      this.initAudioContext();
+      this.isInitialized = true;
+    }
   }
   
   /**
@@ -151,9 +175,17 @@ class SoundManager {
   
   /**
    * Toggle mute
+   * Also ensures audio context is initialized
    */
   toggleMute() {
     this.isMuted = !this.isMuted;
+    
+    // Initialize audio context on mute toggle (user interaction)
+    if (!this.isInitialized) {
+      this.initAudioContext();
+      this.isInitialized = true;
+    }
+    
     return this.isMuted;
   }
   
@@ -162,6 +194,17 @@ class SoundManager {
    */
   isSoundMuted(): boolean {
     return this.isMuted;
+  }
+  
+  /**
+   * Manually initialize audio (call on user interaction)
+   */
+  async initialize() {
+    if (!this.isInitialized) {
+      this.initAudioContext();
+      this.isInitialized = true;
+    }
+    await this.ensureAudioContext();
   }
 }
 

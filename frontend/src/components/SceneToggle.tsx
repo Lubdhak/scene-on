@@ -4,12 +4,16 @@ import { useApp } from '@/context/AppContext';
 import { Power } from 'lucide-react';
 import { scenesApi } from '@/api/scenes';
 import { yellsApi } from '@/api/yells';
+import { soundManager } from '@/utils/soundManager';
 
 const SceneToggle = () => {
   const { isSceneActive, setIsSceneActive, setCurrentYell, setChatRequests, setCurrentSceneId, setSentChatRequests, selectedPersona, setSelectedPersona, setActiveChatId, setShowInbox, setReceivedYells } = useApp();
   const [isLoading, setIsLoading] = useState(false);
 
   const handleToggle = async () => {
+    // Initialize audio on user interaction
+    soundManager.initialize();
+    
     if (isSceneActive) {
       // Turn off scene - clear all ephemeral data
       setIsLoading(true);

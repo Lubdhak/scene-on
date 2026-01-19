@@ -47,6 +47,11 @@ const MapView = () => {
   const [showYellComposer, setShowYellComposer] = useState(false);
   const { subscribe, isConnected, disconnect } = useWebSocket(currentSceneId);
 
+  // Initialize audio on component mount (after user navigates here)
+  useEffect(() => {
+    soundManager.initialize();
+  }, []);
+
   // Register WebSocket disconnect function with AppContext
   useEffect(() => {
     setWsDisconnect(disconnect);

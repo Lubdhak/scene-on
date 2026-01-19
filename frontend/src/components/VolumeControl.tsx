@@ -23,6 +23,9 @@ export const VolumeControl = ({ className = '' }: VolumeControlProps) => {
   const volumeColor = getVolumeColor(volume);
 
   const handleVolumeChange = (value: number) => {
+    // Initialize audio on user interaction
+    soundManager.initialize();
+    
     setVolume(value);
     soundManager.setVolume(value / 100);
     if (value > 0 && isMuted) {
@@ -31,6 +34,9 @@ export const VolumeControl = ({ className = '' }: VolumeControlProps) => {
   };
 
   const toggleMute = () => {
+    // Initialize audio on user interaction
+    soundManager.initialize();
+    
     const newMutedState = soundManager.toggleMute();
     setIsMuted(newMutedState);
   };
@@ -58,9 +64,13 @@ export const VolumeControl = ({ className = '' }: VolumeControlProps) => {
               opacity: 0,
               transition: { duration: 0.15 }
             }}
-            onClick={() => setIsExpanded(true)}
+            onClick={() => {
+              soundManager.initialize();
+              setIsExpanded(true);
+            }}
             onDoubleClick={(e) => {
               e.stopPropagation();
+              soundManager.initialize();
               toggleMute();
             }}
             whileHover={{ scale: 1.05 }}

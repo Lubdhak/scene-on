@@ -6,6 +6,7 @@ import { X, Check, Clock, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
 import { chatApi, ChatSession } from '@/api/chat';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useState } from 'react';
+import { soundManager } from '@/utils/soundManager';
 
 interface ChatInboxProps {
   onClose: () => void;
@@ -196,6 +197,9 @@ const ChatInbox = ({ onClose }: ChatInboxProps) => {
   };
 
   const handleAccept = async (requestId: string) => {
+    // Initialize audio on user interaction
+    soundManager.initialize();
+    
     // Prevent double-clicks
     if (acceptingRequestId) return;
     
@@ -229,6 +233,9 @@ const ChatInbox = ({ onClose }: ChatInboxProps) => {
   };
 
   const handleReject = async (requestId: string) => {
+    // Initialize audio on user interaction
+    soundManager.initialize();
+    
     try {
       await chatApi.rejectChatRequest(requestId);
       setChatRequests(prev =>
