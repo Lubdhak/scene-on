@@ -100,7 +100,6 @@ func StartScene(wsHub *websocket.Hub) gin.HandlerFunc {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update existing scene"})
 				return
 			}
-			log.Printf("✓ Updated existing scene %s for persona %s", scene.ID, personaID)
 		} else {
 			// Create new scene
 			now := time.Now().UTC()
@@ -125,7 +124,6 @@ func StartScene(wsHub *websocket.Hub) gin.HandlerFunc {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create scene"})
 				return
 			}
-			log.Printf("✓ Created new scene %s for persona %s", scene.ID, personaID)
 		}
 
 		// Broadcast scene event to nearby users using PostGIS (much more efficient)
@@ -167,39 +165,25 @@ func StopScene(wsHub *websocket.Hub) gin.HandlerFunc {
 			return
 		}
 
-		// Delete yells and chat_requests, then deactivate scene
-		log.Printf("🧹 Stopping scene %s - deleting associated data", sceneID)
-		
-		// Delete yells
-		result, err := config.DB.Exec(`DELETE FROM yells WHERE scene_id = $1`, sceneID)
+		// Use CTE to perform all cleanup operations atomically in single query
+		_, err = config.DB.Exec(`
+			WITH deleted_yells AS (
+				DELETE FROM yells WHERE scene_id = $1
+				RETURNING id
+			),
+			deleted_requests AS (
+				DELETE FROM chat_requests WHERE from_scene_id = $1 OR to_scene_id = $1
+				RETURNING id
+			)
+			UPDATE scenes SET is_active = false WHERE id = $1
+		`, sceneID)
 		if err != nil {
-			log.Printf("⚠️ Failed to delete yells for scene %s: %v", sceneID, err)
-		} else {
-			if rows, _ := result.RowsAffected(); rows > 0 {
-				log.Printf("✓ Deleted %d yells for scene %s", rows, sceneID)
-			}
-		}
-		
-		// Delete chat requests
-		result, err = config.DB.Exec(`DELETE FROM chat_requests WHERE from_scene_id = $1 OR to_scene_id = $1`, sceneID)
-		if err != nil {
-			log.Printf("⚠️ Failed to delete chat requests for scene %s: %v", sceneID, err)
-		} else {
-			if rows, _ := result.RowsAffected(); rows > 0 {
-				log.Printf("✓ Deleted %d chat requests for scene %s", rows, sceneID)
-			}
-		}
-		
-		// Deactivate scene
-		_, err = config.DB.Exec(`UPDATE scenes SET is_active = false WHERE id = $1`, sceneID)
-		if err != nil {
-			log.Printf("Failed to deactivate scene %s: %v", sceneID, err)
+			log.Printf("Failed to stop scene %s: %v", sceneID, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to stop scene"})
 			return
 		}
 
 		// Broadcast scene ended event
-		log.Printf("📢 Broadcasting scene.ended for scene %s", sceneID)
 		wsHub.Broadcast <- websocket.BroadcastMessage{
 			Message: websocket.Message{
 				Type: "scene.ended",
@@ -215,18 +199,13 @@ func StopScene(wsHub *websocket.Hub) gin.HandlerFunc {
 
 // CleanupActiveScenes marks all scenes as inactive on startup
 func CleanupActiveScenes() {
-	log.Println("🧹 Cleaning up active scenes on startup...")
-	
-	// Mark all scenes inactive
 	res, err := config.DB.Exec(`UPDATE scenes SET is_active = false WHERE is_active = true`)
 	if err != nil {
-		log.Printf("❌ Failed to cleanup database scenes: %v", err)
+		log.Printf("Failed to cleanup database scenes: %v", err)
 	} else {
 		count, _ := res.RowsAffected()
-		log.Printf("✓ Marked %d scenes as inactive", count)
+		log.Printf("Marked %d scenes as inactive on startup", count)
 	}
-
-	log.Println("✓ Startup cleanup complete")
 }
 
 func GetNearbyScenes(c *gin.Context) {
@@ -274,7 +253,7 @@ func GetNearbyScenes(c *gin.Context) {
 		userID, lon, lat, radiusMeters,
 	)
 	if err != nil {
-		log.Printf("❌ Failed to fetch scenes: %v", err)
+		log.Printf("Failed to fetch scenes: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch scenes"})
 		return
 	}
@@ -290,13 +269,11 @@ func GetNearbyScenes(c *gin.Context) {
 			&scene.PersonaName, &scene.PersonaAvatar, &scene.PersonaDescription,
 		)
 		if err != nil {
-			log.Printf("❌ Failed to scan scene: %v", err)
+			log.Printf("Failed to scan scene: %v", err)
 			continue
 		}
 		scenes = append(scenes, scene)
 	}
-
-	log.Printf("📍 Found %d scenes within %.0fkm for user %s", len(scenes), radiusKm, userID)
 
 	c.JSON(http.StatusOK, scenes)
 }

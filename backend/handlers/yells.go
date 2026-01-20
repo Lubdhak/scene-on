@@ -56,17 +56,25 @@ func BroadcastYell(wsHub *websocket.Hub) gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 
-		// Get user's active scene with location
+		// Get user's active scene with location and persona info in one query
 		var scene models.Scene
+		var personaName, personaAvatar string
+		var radiusKm float64
 		err := config.DB.QueryRowContext(ctx, `
-			SELECT id, persona_id, latitude, longitude, is_active, started_at, expires_at, created_at
-			FROM scenes
-			WHERE persona_id = $1 AND is_active = true AND expires_at > NOW()
-			ORDER BY started_at DESC
+			SELECT 
+				s.id, s.persona_id, s.latitude, s.longitude, 
+				s.is_active, s.started_at, s.expires_at, s.created_at,
+				p.name, p.avatar_url,
+				COALESCE((p.stats->>'distance_radius_km')::float, 50.0)
+			FROM scenes s
+			JOIN personas p ON s.persona_id = p.id
+			WHERE s.persona_id = $1 AND s.is_active = true AND s.expires_at > NOW()
+			ORDER BY s.started_at DESC
 			LIMIT 1
 		`, userID).Scan(
 			&scene.ID, &scene.PersonaID, &scene.Latitude, &scene.Longitude,
 			&scene.IsActive, &scene.StartedAt, &scene.ExpiresAt, &scene.CreatedAt,
+			&personaName, &personaAvatar, &radiusKm,
 		)
 
 		if err != nil {
@@ -116,42 +124,13 @@ func BroadcastYell(wsHub *websocket.Hub) gin.HandlerFunc {
 			return
 		}
 
-		// Get persona info for broadcast
-		var personaName, personaAvatar string
-		err = config.DB.QueryRowContext(ctx, `
-			SELECT name, avatar_url
-			FROM personas
-			WHERE id = $1
-		`, scene.PersonaID).Scan(&personaName, &personaAvatar)
-
-		if err != nil {
-			log.Printf("Failed to get persona info: %v", err)
-			// Continue anyway, we'll use empty strings
-		}
-
 		// Broadcast to nearby scenes in a goroutine (non-blocking)
 		go func() {
-			log.Printf("🔊 Starting yell broadcast for scene %s", scene.ID)
-			
-			// Get user's distance radius setting
-			var radiusKm float64
-			err := config.DB.QueryRow(`
-				SELECT COALESCE(
-					(stats->>'distance_radius_km')::float,
-					50.0
-				)
-				FROM personas
-				WHERE id = $1
-			`, scene.PersonaID).Scan(&radiusKm)
-
-			if err != nil || radiusKm == 0 {
-				log.Printf("⚠️ Failed to get radius or radius is 0, using default 50km: %v", err)
-				radiusKm = 50.0 // Default 50km
+			if radiusKm == 0 {
+				radiusKm = 50.0
 			}
 
 			radiusMeters := radiusKm * 1000
-			log.Printf("📡 Broadcasting yell within %.1fkm (%.0fm) from location (%.6f, %.6f)", 
-				radiusKm, radiusMeters, scene.Latitude, scene.Longitude)
 
 			msg := websocket.Message{
 				Type: "yell_broadcast",
@@ -168,9 +147,7 @@ func BroadcastYell(wsHub *websocket.Hub) gin.HandlerFunc {
 				},
 			}
 
-			log.Printf("📨 Message prepared: %+v", msg.Data)
 			wsHub.BroadcastToNearby(msg, scene.Latitude, scene.Longitude, radiusMeters, scene.ID)
-			log.Printf("✓ Yell broadcast completed for scene %s (radius: %.1fkm)", scene.ID, radiusKm)
 		}()
 
 		c.JSON(http.StatusOK, gin.H{
