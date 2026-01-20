@@ -308,97 +308,214 @@ func AcceptChatRequest(wsHub *websocket.Hub) gin.HandlerFunc {
 			return
 		}
 
-		// Get user's active scene
-		var userSceneID uuid.UUID
-		err = config.DB.QueryRow(
-			`SELECT s.id FROM scenes s
-			 JOIN personas p ON s.persona_id = p.id
-			 WHERE p.user_id = $1 AND s.is_active = true AND s.expires_at > NOW()
-			 ORDER BY s.started_at DESC LIMIT 1`,
-			userID,
-		).Scan(&userSceneID)
+		now := time.Now().UTC()
+		expiresAt := now.Add(5 * time.Minute)
+
+		// Start transaction for atomicity
+		tx, err := config.DB.Begin()
+		if err != nil {
+			log.Printf("[AcceptChatRequest] Failed to begin transaction: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
+			return
+		}
+		defer tx.Rollback()
+
+		// Combined query: validate everything and get all needed info in one go
+		// This prevents race conditions and improves performance
+		var fromSceneID, toSceneID, userSceneID uuid.UUID
+		var currentStatus string
+		var fromPersonaName, fromPersonaAvatar, toPersonaName, toPersonaAvatar string
+		var fromSceneActive, toSceneActive bool
+		var fromSceneExpiry, toSceneExpiry, requestCreatedAt time.Time
+		var acceptedAt sql.NullTime
+		var requestExpiresAt sql.NullTime
+
+		err = tx.QueryRow(`
+			WITH user_scene AS (
+				SELECT s.id, s.is_active, s.expires_at, p.name, p.avatar_url
+				FROM scenes s
+				JOIN personas p ON s.persona_id = p.id
+				WHERE p.user_id = $1 
+					AND s.is_active = true 
+					AND s.expires_at > NOW()
+				ORDER BY s.started_at DESC 
+				LIMIT 1
+			),
+			request_data AS (
+				SELECT 
+					cr.from_scene_id,
+					cr.to_scene_id,
+					cr.status,
+					cr.created_at,
+					cr.accepted_at,
+					cr.expires_at,
+					fs.is_active as from_active,
+					fs.expires_at as from_expiry,
+					ts.is_active as to_active,
+					ts.expires_at as to_expiry,
+					fp.name as from_persona_name,
+					fp.avatar_url as from_persona_avatar,
+					tp.name as to_persona_name,
+					tp.avatar_url as to_persona_avatar
+				FROM chat_requests cr
+				JOIN scenes fs ON cr.from_scene_id = fs.id
+				JOIN personas fp ON fs.persona_id = fp.id
+				JOIN scenes ts ON cr.to_scene_id = ts.id
+				JOIN personas tp ON ts.persona_id = tp.id
+				WHERE cr.id = $2
+			)
+			SELECT 
+				rd.from_scene_id,
+				rd.to_scene_id,
+				us.id,
+				rd.status,
+				rd.from_persona_name,
+				rd.from_persona_avatar,
+				rd.to_persona_name,
+				rd.to_persona_avatar,
+				rd.from_active,
+				rd.to_active,
+				rd.from_expiry,
+				rd.to_expiry,
+				rd.created_at,
+				rd.accepted_at,
+				rd.expires_at
+			FROM request_data rd
+			CROSS JOIN user_scene us
+		`, userID, reqUUID).Scan(
+			&fromSceneID, &toSceneID, &userSceneID,
+			&currentStatus,
+			&fromPersonaName, &fromPersonaAvatar,
+			&toPersonaName, &toPersonaAvatar,
+			&fromSceneActive, &toSceneActive,
+			&fromSceneExpiry, &toSceneExpiry,
+			&requestCreatedAt,
+			&acceptedAt,
+			&requestExpiresAt,
+		)
 
 		if err == sql.ErrNoRows {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "No active scene found"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "No active scene found or request does not exist"})
 			return
 		}
 		if err != nil {
-			log.Printf("Failed to get active scene: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get active scene"})
+			log.Printf("[AcceptChatRequest] Failed to fetch request data for request_id=%s, user_id=%s: %v", reqUUID, userID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process request"})
 			return
 		}
 
-		// Verify request is for this user's scene and is pending
-		var fromSceneID, toSceneID uuid.UUID
-		var status string
-		err = config.DB.QueryRow(
-			`SELECT from_scene_id, to_scene_id, status FROM chat_requests WHERE id = $1`,
-			reqUUID,
-		).Scan(&fromSceneID, &toSceneID, &status)
-
-		if err == sql.ErrNoRows {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Chat request not found"})
-			return
-		}
-		if err != nil {
-			log.Printf("Failed to get chat request: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get chat request"})
-			return
-		}
-
+		// Validate: request must be for the user's scene
 		if toSceneID != userSceneID {
 			c.JSON(http.StatusForbidden, gin.H{"error": "This request is not for your scene"})
 			return
 		}
 
-		if status != "pending" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Request already " + status})
+		// Validate: from scene must still be active
+		if !fromSceneActive || fromSceneExpiry.Before(now) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "The requesting scene is no longer active"})
 			return
 		}
 
-		// Accept request and set expiration (5 minutes from now)
-		now := time.Now().UTC()
-		expiresAt := now.Add(5 * time.Minute)
+		// Handle idempotency: if already accepted, return success with existing data
+		if currentStatus == "accepted" {
+			log.Printf("[AcceptChatRequest] Request already accepted: request_id=%s", reqUUID)
+			
+			// Return existing accepted data
+			responseExpiresAt := expiresAt
+			if requestExpiresAt.Valid {
+				responseExpiresAt = requestExpiresAt.Time
+			}
+			
+			c.JSON(http.StatusOK, gin.H{
+				"message":             "Chat request already accepted",
+				"request_id":          reqUUID.String(),
+				"expires_at":          responseExpiresAt,
+				"from_scene_id":       fromSceneID.String(),
+				"to_scene_id":         toSceneID.String(),
+				"from_persona_name":   fromPersonaName,
+				"from_persona_avatar": fromPersonaAvatar,
+				"to_persona_name":     toPersonaName,
+				"to_persona_avatar":   toPersonaAvatar,
+			})
+			return
+		}
 
-		_, err = config.DB.Exec(
-			`UPDATE chat_requests 
-			 SET status = 'accepted', accepted_at = $1, expires_at = $2
-			 WHERE id = $3`,
-			now, expiresAt, reqUUID,
-		)
+		// Validate: request must be pending
+		if currentStatus != "pending" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":  "Request cannot be accepted",
+				"status": currentStatus,
+			})
+			return
+		}
+
+		// Update request status to accepted
+		result, err := tx.Exec(`
+			UPDATE chat_requests 
+			SET status = 'accepted', accepted_at = $1, expires_at = $2
+			WHERE id = $3 AND status = 'pending'
+		`, now, expiresAt, reqUUID)
 
 		if err != nil {
-			log.Printf("Failed to accept chat request: %v", err)
+			log.Printf("[AcceptChatRequest] Failed to update chat request: request_id=%s, error=%v", reqUUID, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to accept chat request"})
 			return
 		}
 
-		// Send WebSocket notification to both parties via Targeted messages
+		// Check if update actually happened (additional safety against race conditions)
+		rowsAffected, _ := result.RowsAffected()
+		if rowsAffected == 0 {
+			log.Printf("[AcceptChatRequest] No rows updated, possible race condition: request_id=%s", reqUUID)
+			c.JSON(http.StatusConflict, gin.H{"error": "Request was already processed"})
+			return
+		}
+
+		// Commit transaction
+		if err := tx.Commit(); err != nil {
+			log.Printf("[AcceptChatRequest] Failed to commit transaction: request_id=%s, error=%v", reqUUID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to accept chat request"})
+			return
+		}
+
+		log.Printf("[AcceptChatRequest] Successfully accepted: request_id=%s, from=%s, to=%s", 
+			reqUUID, fromSceneID, toSceneID)
+
+		// Send WebSocket notification to both parties
 		acceptedMsg := websocket.Message{
 			Type: "chat.request.accepted",
 			Data: map[string]interface{}{
-				"request_id":   reqUUID.String(),
-				"expires_at":   expiresAt.Format(time.RFC3339),
-				"from_scene_id": fromSceneID.String(),
-				"to_scene_id":   toSceneID.String(),
+				"request_id":          reqUUID.String(),
+				"expires_at":          expiresAt.Format(time.RFC3339),
+				"from_scene_id":       fromSceneID.String(),
+				"to_scene_id":         toSceneID.String(),
+				"from_persona_name":   fromPersonaName,
+				"from_persona_avatar": fromPersonaAvatar,
+				"to_persona_name":     toPersonaName,
+				"to_persona_avatar":   toPersonaAvatar,
 			},
 		}
 
-		// Notify requester
+		// Notify requester (from_scene)
 		wsHub.Targeted <- websocket.TargetedMessage{
 			TargetSceneID: fromSceneID,
 			Message:       acceptedMsg,
 		}
-		// Notify recipient (the one who just accepted) - optional but good for multi-tab
+		// Notify recipient (to_scene) - for multi-tab support
 		wsHub.Targeted <- websocket.TargetedMessage{
 			TargetSceneID: toSceneID,
 			Message:       acceptedMsg,
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"message":    "Chat request accepted",
-			"request_id": reqUUID.String(),
-			"expires_at": expiresAt,
+			"message":             "Chat request accepted",
+			"request_id":          reqUUID.String(),
+			"expires_at":          expiresAt,
+			"from_scene_id":       fromSceneID.String(),
+			"to_scene_id":         toSceneID.String(),
+			"from_persona_name":   fromPersonaName,
+			"from_persona_avatar": fromPersonaAvatar,
+			"to_persona_name":     toPersonaName,
+			"to_persona_avatar":   toPersonaAvatar,
 		})
 	}
 }
