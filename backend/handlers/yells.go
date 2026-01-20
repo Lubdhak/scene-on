@@ -234,7 +234,7 @@ func GetNearbyYells() gin.HandlerFunc {
 		}
 		defer rows.Close()
 
-		yells := []YellWithPersona{}
+		yells := []map[string]interface{}{}
 		for rows.Next() {
 			var yell YellWithPersona
 			err := rows.Scan(
@@ -252,7 +252,20 @@ func GetNearbyYells() gin.HandlerFunc {
 				log.Printf("Failed to scan yell: %v", err)
 				continue
 			}
-			yells = append(yells, yell)
+			
+			// Convert to map with Unix timestamps to match frontend expectations
+			yellMap := map[string]interface{}{
+				"id":             yell.ID.String(),
+				"scene_id":       yell.SceneID,
+				"content":        yell.Content,
+				"latitude":       yell.Latitude,
+				"longitude":      yell.Longitude,
+				"expires_at":     yell.ExpiresAt.Unix(),
+				"created_at":     yell.CreatedAt.Unix(),
+				"persona_name":   yell.PersonaName,
+				"persona_avatar": yell.PersonaAvatar,
+			}
+			yells = append(yells, yellMap)
 		}
 
 		c.JSON(http.StatusOK, gin.H{
