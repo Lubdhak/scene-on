@@ -371,7 +371,7 @@ const MapView = () => {
               variant="ghost"
               size="icon"
               onClick={() => setShowInbox(true)}
-              className="relative w-10 h-10 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl bg-card/80 backdrop-blur-md border border-border/50 hover:bg-card"
+              className="relative w-10 h-10 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl bg-card/80 backdrop-blur-md border border-border/50 hover:bg-card hover:border-primary hover:shadow-lg hover:shadow-primary/20 transition-all duration-200"
             >
               <Inbox className="w-4 h-4 sm:w-5 sm:h-5 text-foreground" />
               {totalNotificationCount > 0 && (
@@ -386,7 +386,7 @@ const MapView = () => {
               variant="ghost"
               size="icon"
               onClick={() => navigate('/persona')}
-              className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl bg-card/80 backdrop-blur-md border border-border/50 hover:bg-card"
+              className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl bg-card/80 backdrop-blur-md border border-border/50 hover:bg-card hover:border-primary hover:shadow-lg hover:shadow-primary/20 transition-all duration-200"
             >
               <Settings className="w-4 h-4 sm:w-5 sm:h-5 text-foreground" />
             </Button>
@@ -396,7 +396,7 @@ const MapView = () => {
               variant="ghost"
               size="icon"
               onClick={logout}
-              className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl bg-card/80 backdrop-blur-md border border-border/50 hover:bg-card text-destructive hover:text-destructive"
+              className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl bg-card/80 backdrop-blur-md border border-border/50 hover:bg-card hover:border-destructive hover:shadow-lg hover:shadow-destructive/20 text-destructive hover:text-destructive transition-all duration-200"
             >
               <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
             </Button>

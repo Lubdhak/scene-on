@@ -75,7 +75,7 @@ export const VolumeControl = ({ className = '' }: VolumeControlProps) => {
             }}
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            className="group relative flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 sm:py-2.5 bg-card/80 backdrop-blur-md border border-border/50 rounded-lg sm:rounded-xl hover:bg-card transition-colors cursor-pointer shadow-sm"
+            className="group relative flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 sm:py-2.5 bg-card/80 backdrop-blur-md border border-border/50 rounded-lg sm:rounded-xl hover:bg-card hover:border-primary hover:shadow-lg hover:shadow-primary/20 transition-all duration-200 cursor-pointer shadow-sm"
             title="Click to adjust, double-click to mute"
           >
             {/* Icon with pulse */}
