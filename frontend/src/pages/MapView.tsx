@@ -234,16 +234,29 @@ const MapView = () => {
 
     const unsubscribeExpired = subscribe('chat.expired', (data) => {
       if (data && data.request_id) {
-        console.log('⏰ Chat expired:', data);
-        setChatRequests(prev => prev.filter(r => r.id !== data.request_id));
-        setSentChatRequests(prev => prev.filter(r => r.id !== data.request_id));
-        setActiveSessions(prev => prev.filter(s => s.request_id !== data.request_id));
-        setUnreadSessionIds(prev => prev.filter(id => id !== data.request_id));
+        console.log('⏰ MapView: Chat expired via WebSocket:', data.request_id);
+        
+        // Clean up all state immediately
+        const requestId = data.request_id;
+        setChatRequests(prev => {
+          const filtered = prev.filter(r => r.id !== requestId);
+          console.log('⏰ MapView: Removed from chatRequests, count:', prev.length, '->', filtered.length);
+          return filtered;
+        });
+        setSentChatRequests(prev => prev.filter(r => r.id !== requestId));
+        setActiveSessions(prev => {
+          const filtered = prev.filter(s => s.request_id !== requestId);
+          console.log('⏰ MapView: Removed from activeSessions, count:', prev.length, '->', filtered.length);
+          return filtered;
+        });
+        setUnreadSessionIds(prev => {
+          const filtered = prev.filter(id => id !== requestId);
+          console.log('⏰ MapView: Removed from unreadSessionIds, count:', prev.length, '->', filtered.length);
+          return filtered;
+        });
 
         // If this was the active chat, close it
-        if (activeChatId === data.request_id) {
-          // We might want to clear activeChatId via context or navigate away? 
-          // For now, let's just toast.
+        if (activeChatId === requestId) {
           toast({
             title: "Chat Expired",
             description: "The chat session has ended.",
