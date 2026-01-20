@@ -174,14 +174,6 @@ func runMigrations() error {
 			created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 		)`,
 
-		`CREATE TABLE IF NOT EXISTS otp_codes (
-			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-			email VARCHAR(255) NOT NULL,
-			code VARCHAR(6) NOT NULL,
-			expires_at TIMESTAMPTZ NOT NULL,
-			created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-		)`,
-
 		`CREATE TABLE IF NOT EXISTS user_locations (
 			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
@@ -226,7 +218,6 @@ func runMigrations() error {
 		`CREATE INDEX IF NOT EXISTS idx_chat_requests_to_from_status ON chat_requests(to_scene_id, from_scene_id, status)`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_requests_expiration ON chat_requests(expires_at, status)`,
 		// Removed: idx_chat_messages_request - replaced by idx_chat_messages_request_id_created above
-		`CREATE INDEX IF NOT EXISTS idx_otp_email ON otp_codes(email, expires_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_user_locations_user ON user_locations(user_id, created_at DESC)`,
 	}
 

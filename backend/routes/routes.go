@@ -47,9 +47,6 @@ func SetupRoutes(router *gin.Engine, wsHub *websocket.Hub) {
 		// Public auth routes
 		auth := v1.Group("/auth")
 		{
-			auth.POST("/send-otp", handlers.SendOTP)
-			auth.POST("/verify-otp", handlers.VerifyOTP)
-			
 			// Google OAuth routes
 			auth.GET("/google/login", handlers.GoogleLogin)
 			auth.GET("/google/callback", handlers.GoogleCallback)
