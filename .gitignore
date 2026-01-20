@@ -1,6 +1,7 @@
 # Backend (Go)
 backend/scene-on
 backend/backend
+backend/app
 backend/tmp/
 *.exe
 *.exe~
