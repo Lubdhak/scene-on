@@ -8,6 +8,7 @@ import (
 	"scene-on/backend/middleware"
 	"scene-on/backend/models"
 	"scene-on/backend/websocket"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -673,7 +674,7 @@ func SendChatMessage(wsHub *websocket.Hub) gin.HandlerFunc {
 	}
 }
 
-// GetChatMessages gets all messages in a chat session
+// GetChatMessages gets all messages in a chat session with optional pagination
 func GetChatMessages(c *gin.Context) {
 	userID, _ := middleware.GetUserID(c)
 	requestID := c.Param("request_id")
@@ -684,55 +685,39 @@ func GetChatMessages(c *gin.Context) {
 		return
 	}
 
-	// Get user's active scene
-	var userSceneID uuid.UUID
-	err = config.DB.QueryRow(
-		`SELECT s.id FROM scenes s
-		 JOIN personas p ON s.persona_id = p.id
-		 WHERE p.user_id = $1 AND s.is_active = true AND s.expires_at > NOW()
-		 ORDER BY s.started_at DESC LIMIT 1`,
-		userID,
-	).Scan(&userSceneID)
-
-	if err == sql.ErrNoRows {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "No active scene found"})
-		return
-	}
-	if err != nil {
-		log.Printf("Failed to get active scene: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get active scene"})
-		return
+	// Optional pagination parameters
+	limit := 100 // Default limit
+	if limitStr := c.Query("limit"); limitStr != "" {
+		if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 && parsedLimit <= 500 {
+			limit = parsedLimit
+		}
 	}
 
-	// Verify user is part of this chat
-	var fromSceneID, toSceneID uuid.UUID
-	err = config.DB.QueryRow(
-		`SELECT from_scene_id, to_scene_id FROM chat_requests WHERE id = $1`,
-		reqUUID,
-	).Scan(&fromSceneID, &toSceneID)
-
-	if err == sql.ErrNoRows {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Chat not found"})
-		return
-	}
-	if err != nil {
-		log.Printf("Failed to get chat request: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get chat"})
-		return
+	offset := 0
+	if offsetStr := c.Query("offset"); offsetStr != "" {
+		if parsedOffset, err := strconv.Atoi(offsetStr); err == nil && parsedOffset >= 0 {
+			offset = parsedOffset
+		}
 	}
 
-	if userSceneID != fromSceneID && userSceneID != toSceneID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "You are not part of this chat"})
-		return
-	}
-
-	// Get messages
+	// Optimized: Single query that verifies authorization and fetches messages
+	// This combines the scene check, chat authorization, and message retrieval into one query
 	rows, err := config.DB.Query(
-		`SELECT id, chat_request_id, from_scene_id, content, created_at
-		 FROM chat_messages
-		 WHERE chat_request_id = $1
-		 ORDER BY created_at ASC`,
+		`SELECT cm.id, cm.chat_request_id, cm.from_scene_id, cm.content, cm.created_at
+		 FROM chat_messages cm
+		 INNER JOIN chat_requests cr ON cm.chat_request_id = cr.id
+		 INNER JOIN scenes s ON (s.id = cr.from_scene_id OR s.id = cr.to_scene_id)
+		 INNER JOIN personas p ON s.persona_id = p.id
+		 WHERE cm.chat_request_id = $1
+		   AND p.user_id = $2
+		   AND s.is_active = true
+		   AND s.expires_at > NOW()
+		 ORDER BY cm.created_at ASC
+		 LIMIT $3 OFFSET $4`,
 		reqUUID,
+		userID,
+		limit,
+		offset,
 	)
 
 	if err != nil {
@@ -743,7 +728,9 @@ func GetChatMessages(c *gin.Context) {
 	defer rows.Close()
 
 	var messages []models.ChatMessage
+	hasRows := false
 	for rows.Next() {
+		hasRows = true
 		var msg models.ChatMessage
 		err := rows.Scan(&msg.ID, &msg.ChatRequestID, &msg.FromSceneID, &msg.Content, &msg.CreatedAt)
 		if err != nil {
@@ -753,6 +740,35 @@ func GetChatMessages(c *gin.Context) {
 		messages = append(messages, msg)
 	}
 
+	// If no rows were returned, it could be unauthorized or chat not found
+	if !hasRows {
+		// Quick check if chat exists
+		var exists bool
+		err = config.DB.QueryRow(`SELECT EXISTS(SELECT 1 FROM chat_requests WHERE id = $1)`, reqUUID).Scan(&exists)
+		if err == nil && !exists {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Chat not found"})
+			return
+		}
+		
+		// If chat exists but no messages, either unauthorized or no messages yet
+		// Check if user has active scene and is part of chat
+		var authorized bool
+		err = config.DB.QueryRow(
+			`SELECT EXISTS(
+				SELECT 1 FROM chat_requests cr
+				INNER JOIN scenes s ON (s.id = cr.from_scene_id OR s.id = cr.to_scene_id)
+				INNER JOIN personas p ON s.persona_id = p.id
+				WHERE cr.id = $1 AND p.user_id = $2 AND s.is_active = true AND s.expires_at > NOW()
+			)`,
+			reqUUID, userID,
+		).Scan(&authorized)
+		
+		if err == nil && !authorized {
+			c.JSON(http.StatusForbidden, gin.H{"error": "You are not part of this chat or have no active scene"})
+			return
+		}
+	}
+
 	if messages == nil {
 		messages = []models.ChatMessage{}
 	}
@@ -760,62 +776,69 @@ func GetChatMessages(c *gin.Context) {
 	c.JSON(http.StatusOK, messages)
 }
 
-// GetActiveChatSessions gets all active chats for user's scene
+// GetActiveChatSessions gets all active chats for user's scene - Optimized
 func GetActiveChatSessions(c *gin.Context) {
 	userID, _ := middleware.GetUserID(c)
 
-	// Get user's active scene
-	var userSceneID uuid.UUID
-	err := config.DB.QueryRow(
-		`SELECT s.id FROM scenes s
-		 JOIN personas p ON s.persona_id = p.id
-		 WHERE p.user_id = $1 AND s.is_active = true AND s.expires_at > NOW()
-		 ORDER BY s.started_at DESC LIMIT 1`,
-		userID,
-	).Scan(&userSceneID)
-
-	if err == sql.ErrNoRows {
-		c.JSON(http.StatusOK, []map[string]interface{}{})
-		return
-	}
-	if err != nil {
-		log.Printf("Failed to get active scene: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get active scene"})
-		return
-	}
-
-	// Get active chat sessions
+	// Optimized: Single query combining scene lookup and sessions retrieval
+	// Uses CTE (Common Table Expression) for better query planning
 	rows, err := config.DB.Query(
-		`SELECT cr.id, cr.from_scene_id, cr.to_scene_id, cr.expires_at,
-		        p.name as other_persona_name, p.avatar_url as other_persona_avatar,
-		        p.description as other_persona_description,
-		        cm.content as last_message_content,
-		        cm.from_scene_id as last_message_sender_id,
-		        cm.created_at as last_message_at
-		 FROM chat_requests cr
-		 JOIN scenes s ON (CASE WHEN cr.from_scene_id = $1 THEN cr.to_scene_id ELSE cr.from_scene_id END) = s.id
-		 JOIN personas p ON s.persona_id = p.id
-		 LEFT JOIN LATERAL (
-		     SELECT content, from_scene_id, created_at
-		     FROM chat_messages
-		     WHERE chat_request_id = cr.id
-		     ORDER BY created_at DESC
-		     LIMIT 1
-		 ) cm ON TRUE
-		 WHERE (cr.from_scene_id = $1 OR cr.to_scene_id = $1)
-		 AND cr.status = 'accepted'
-		 AND cr.expires_at > NOW()
-		 ORDER BY COALESCE(cm.created_at, cr.accepted_at) DESC`,
-		userSceneID,
+		`WITH user_scene AS (
+			SELECT s.id as scene_id
+			FROM scenes s
+			INNER JOIN personas p ON s.persona_id = p.id
+			WHERE p.user_id = $1 
+			  AND s.is_active = true 
+			  AND s.expires_at > NOW()
+			ORDER BY s.started_at DESC 
+			LIMIT 1
+		)
+		SELECT 
+			cr.id, 
+			cr.from_scene_id, 
+			cr.to_scene_id, 
+			cr.expires_at,
+			p.name as other_persona_name, 
+			p.avatar_url as other_persona_avatar,
+			p.description as other_persona_description,
+			cm.content as last_message_content,
+			cm.from_scene_id as last_message_sender_id,
+			cm.created_at as last_message_at
+		FROM user_scene us
+		INNER JOIN chat_requests cr ON (cr.from_scene_id = us.scene_id OR cr.to_scene_id = us.scene_id)
+		INNER JOIN scenes other_scene ON other_scene.id = (
+			CASE 
+				WHEN cr.from_scene_id = us.scene_id THEN cr.to_scene_id 
+				ELSE cr.from_scene_id 
+			END
+		)
+		INNER JOIN personas p ON other_scene.persona_id = p.id
+		LEFT JOIN LATERAL (
+			SELECT content, from_scene_id, created_at
+			FROM chat_messages
+			WHERE chat_request_id = cr.id
+			ORDER BY created_at DESC
+			LIMIT 1
+		) cm ON TRUE
+		WHERE cr.status = 'accepted'
+		  AND cr.expires_at > NOW()
+		ORDER BY COALESCE(cm.created_at, cr.accepted_at) DESC`,
+		userID,
 	)
-
-	if err != nil {
-		log.Printf("Failed to get active sessions: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get active sessions"})
+== sql.ErrNoRows || err != nil {
+		if err != nil && err != sql.ErrNoRows {
+			log.Printf("Failed to get active sessions: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get active sessions"})
+			return
+		}
+		// No active scene or no sessions
+		c.JSON(http.StatusOK, []map[string]interface{}{})
 		return
 	}
 	defer rows.Close()
 
+	// Pre-allocate slice with estimated capacity to reduce allocations
+	sessions := make([]map[string]interface{}, 0, 10)
 	var sessions []map[string]interface{}
 	for rows.Next() {
 		var id, fromSceneID, toSceneID uuid.UUID
@@ -834,15 +857,15 @@ func GetActiveChatSessions(c *gin.Context) {
 			continue
 		}
 
-		session := map[string]interface{}{
-			"request_id":                id.String(),
-			"from_scene_id":             fromSceneID.String(),
-			"to_scene_id":               toSceneID.String(),
-			"expires_at":                expiresAt,
-			"other_persona_name":        otherPersonaName,
-			"other_persona_avatar":      otherPersonaAvatar,
-			"other_persona_description": otherPersonaDescription,
-		}
+		// Reuse map allocation with known size for better memory efficiency
+		session := make(map[string]interface{}, 10)
+		session["request_id"] = id.String()
+		session["from_scene_id"] = fromSceneID.String()
+		session["to_scene_id"] = toSceneID.String()
+		session["expires_at"] = expiresAt
+		session["other_persona_name"] = otherPersonaName
+		session["other_persona_avatar"] = otherPersonaAvatar
+		session["other_persona_description"] = otherPersonaDescription
 
 		if lastMsgContent.Valid {
 			session["last_message_content"] = lastMsgContent.String

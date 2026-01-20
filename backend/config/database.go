@@ -32,11 +32,18 @@ func InitDatabase() error {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// ---- Connection Pool (Neon / Render safe defaults) ----
-	DB.SetMaxOpenConns(20)
-	DB.SetMaxIdleConns(5)
-	DB.SetConnMaxLifetime(10 * time.Minute)
-	DB.SetConnMaxIdleTime(5 * time.Minute)
+	// ---- Optimized Connection Pool Settings ----
+	// Max open connections: Balance between performance and resource usage
+	DB.SetMaxOpenConns(25) // Increased for better concurrent request handling
+	
+	// Max idle connections: Keep connections warm for faster response
+	DB.SetMaxIdleConns(10) // Increased to reduce connection overhead
+	
+	// Connection lifetime: Rotate connections to avoid stale connections
+	DB.SetConnMaxLifetime(5 * time.Minute) // Shorter to handle database restarts better
+	
+	// Idle timeout: Close idle connections to free resources
+	DB.SetConnMaxIdleTime(2 * time.Minute) // Shorter for better resource management
 
 	// ---- Ping with timeout ----
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -184,7 +191,24 @@ func runMigrations() error {
 			created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 		)`,
 
-		// ---- Indexes ----
+		// ---- Performance Indexes ----
+		// Composite index for chat messages - optimizes GetChatMessages query
+		`CREATE INDEX IF NOT EXISTS idx_chat_messages_request_id_created ON chat_messages(chat_request_id, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_chat_messages_from_scene ON chat_messages(from_scene_id)`,
+		
+		// Composite index for active chat lookups - optimizes GetActiveChatSessions
+		`CREATE INDEX IF NOT EXISTS idx_chat_requests_status_expires ON chat_requests(status, expires_at) WHERE status = 'accepted'`,
+		`CREATE INDEX IF NOT EXISTS idx_chat_requests_scenes_status ON chat_requests(from_scene_id, to_scene_id, status, expires_at)`,
+		
+		// Index for active scene lookups by persona - most frequent query
+		`CREATE INDEX IF NOT EXISTS idx_scenes_persona_active ON scenes(persona_id, is_active, expires_at) WHERE is_active = true`,
+		`CREATE INDEX IF NOT EXISTS idx_scenes_active_started ON scenes(is_active, started_at DESC) WHERE is_active = true`,
+		
+		// Spatial index for geographic queries (PostGIS)
+		`CREATE INDEX IF NOT EXISTS idx_scenes_location_gist ON scenes USING GIST (ST_SetSRID(ST_MakePoint(longitude, latitude), 4326))`,
+		`CREATE INDEX IF NOT EXISTS idx_yells_location_gist ON yells USING GIST (ST_SetSRID(ST_MakePoint(longitude, latitude), 4326))`,
+		
+		// Legacy indexes (kept for backward compatibility)
 		`CREATE INDEX IF NOT EXISTS idx_scenes_location ON scenes(latitude, longitude)`,
 		`CREATE INDEX IF NOT EXISTS idx_scenes_active_expires ON scenes(is_active, expires_at) WHERE is_active = true`,
 		`CREATE INDEX IF NOT EXISTS idx_scenes_persona_id ON scenes(persona_id)`,
@@ -201,7 +225,7 @@ func runMigrations() error {
 		`CREATE INDEX IF NOT EXISTS idx_chat_requests_from_to_status ON chat_requests(from_scene_id, to_scene_id, status)`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_requests_to_from_status ON chat_requests(to_scene_id, from_scene_id, status)`,
 		`CREATE INDEX IF NOT EXISTS idx_chat_requests_expiration ON chat_requests(expires_at, status)`,
-		`CREATE INDEX IF NOT EXISTS idx_chat_messages_request ON chat_messages(chat_request_id, created_at)`,
+		// Removed: idx_chat_messages_request - replaced by idx_chat_messages_request_id_created above
 		`CREATE INDEX IF NOT EXISTS idx_otp_email ON otp_codes(email, expires_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_user_locations_user ON user_locations(user_id, created_at DESC)`,
 	}

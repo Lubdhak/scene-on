@@ -253,7 +253,7 @@ export const useWebSocket = (sceneId?: string | null) => {
                 ws.current.close();
             }
         };
-    }, [connect, cleanup]);
+    }, [sceneId, connect, cleanup]);
 
     return { 
         subscribe, 
