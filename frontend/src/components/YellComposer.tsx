@@ -120,7 +120,7 @@ const YellComposer = ({ onClose }: YellComposerProps) => {
             </div>
             <div>
               <h3 className="font-semibold text-foreground">Broadcast a Yell</h3>
-              <p className="text-xs text-muted-foreground">Visible to everyone nearby</p>
+              <p className="text-xs text-muted-foreground">Visible to everyone nearby for 5 minutes</p>
             </div>
           </div>
           <button

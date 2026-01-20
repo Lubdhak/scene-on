@@ -34,6 +34,7 @@ const MapMarker = memo(forwardRef<HTMLDivElement, {
   const { user, index, session, pendingMessage, isPendingSent, isPendingReceived, currentSceneId, yell, onClick, onMessageClick } = props;
   const isActive = !!session;
   const [timeLeft, setTimeLeft] = useState<number>(0);
+  const [yellTimeLeft, setYellTimeLeft] = useState<number>(0);
   const [isYellExpanded, setIsYellExpanded] = useState(false);
   const totalDuration = 5 * 60; // 5 minutes in seconds
 
@@ -54,6 +55,24 @@ const MapMarker = memo(forwardRef<HTMLDivElement, {
 
   const progress = (timeLeft / totalDuration) * 100;
   const isUrgent = isActive && timeLeft < 60;
+
+  // Calculate yell countdown
+  useEffect(() => {
+    if (!yell) return;
+
+    const calculateYellTime = () => {
+      const expiry = new Date(yell.expires_at).getTime();
+      const now = new Date().getTime();
+      const diff = Math.max(0, Math.floor((expiry - now) / 1000));
+      setYellTimeLeft(diff);
+    };
+
+    calculateYellTime();
+    const interval = setInterval(calculateYellTime, 1000);
+    return () => clearInterval(interval);
+  }, [yell]);
+
+  const yellProgress = (yellTimeLeft / totalDuration) * 100;
 
   // Debug log for yell prop
   useEffect(() => {
@@ -174,7 +193,24 @@ const MapMarker = memo(forwardRef<HTMLDivElement, {
                 yell.content.length > 30 ? 'cursor-pointer hover:ring-accent/50' : ''
               }`}
             >
-              <Megaphone className="absolute top-2 left-2 w-3 h-3 shrink-0" />
+              {/* Megaphone with countdown circle */}
+              <div className="absolute top-2 left-2 w-3 h-3">
+                <svg className="absolute inset-0 w-5 h-5 -translate-x-1 -translate-y-1 -rotate-90 transform">
+                  <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-accent-foreground/20" />
+                  <circle
+                    cx="10"
+                    cy="10"
+                    r="8"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeDasharray="50.24"
+                    strokeDashoffset={50.24 - (yellProgress * 50.24) / 100}
+                    className="text-accent-foreground transition-all duration-1000"
+                  />
+                </svg>
+                <Megaphone className="relative w-3 h-3 shrink-0" />
+              </div>
               <span className={`text-sm font-medium leading-tight block pl-5 ${
                 isYellExpanded ? 'whitespace-normal' : 'truncate'
               }`}>
