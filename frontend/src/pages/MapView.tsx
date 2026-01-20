@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useApp } from '@/context/AppContext';
@@ -46,6 +46,12 @@ const MapView = () => {
   const { toast } = useToast();
   const [showYellComposer, setShowYellComposer] = useState(false);
   const { subscribe, isConnected, disconnect } = useWebSocket(currentSceneId);
+  
+  // Use ref to access current activeChatId without triggering subscription recreation
+  const activeChatIdRef = useRef(activeChatId);
+  useEffect(() => {
+    activeChatIdRef.current = activeChatId;
+  }, [activeChatId]);
 
   // Initialize audio on component mount (after user navigates here)
   useEffect(() => {
@@ -185,7 +191,7 @@ const MapView = () => {
       const reqId = data.request_id;
       if (reqId) {
         // Mark as unread if not active
-        if (activeChatId !== reqId) {
+        if (activeChatIdRef.current !== reqId) {
           setUnreadSessionIds(prev => prev.includes(reqId) ? prev : [...prev, reqId]);
           // Play sound for new message (only if not in active chat)
           soundManager.playIncomingMessage();
@@ -256,7 +262,7 @@ const MapView = () => {
         });
 
         // If this was the active chat, close it
-        if (activeChatId === requestId) {
+        if (activeChatIdRef.current === requestId) {
           toast({
             title: "Chat Expired",
             description: "The chat session has ended.",
@@ -280,7 +286,7 @@ const MapView = () => {
             console.log('Found affected session:', affectedSession);
 
             // If we are currently in this chat, notify and close
-            if (activeChatId === affectedSession.request_id) {
+            if (activeChatIdRef.current === affectedSession.request_id) {
               toast({
                 title: "User Left",
                 description: "The other user has left the scene. Chat ended.",
@@ -321,7 +327,7 @@ const MapView = () => {
       unsubscribeExpired();
       unsubscribeSceneEnded();
     };
-  }, [subscribe, isSceneActive, activeChatId, setChatRequests, setActiveSessions, setUnreadSessionIds]);
+  }, [subscribe, isSceneActive, setChatRequests, setActiveSessions, setUnreadSessionIds, toast]);
 
 
   if (!selectedPersona) return null;

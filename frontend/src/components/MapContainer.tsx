@@ -251,6 +251,10 @@ const MapContainer = () => {
       const { scene_id } = data;
       console.log('🎭 REAL-TIME: Scene ended received via WS:', scene_id);
       setNearbyUsers(prev => {
+        const user = prev.find(u => u.sceneId === scene_id);
+        if (user) {
+          console.log('🎭 Removing user due to scene.ended:', user.name, scene_id);
+        }
         const filtered = prev.filter(u => u.sceneId !== scene_id);
         console.log(`📉 Nearby users count: ${prev.length} -> ${filtered.length}`);
         return filtered;
@@ -359,7 +363,22 @@ const MapContainer = () => {
       }));
 
       console.log('👥 Setting nearby users:', users.length);
-      setNearbyUsers(users);
+      setNearbyUsers(prev => {
+        // Log any users that are being removed
+        const prevIds = new Set(prev.map(u => u.sceneId));
+        const newIds = new Set(users.map(u => u.sceneId));
+        const removed = prev.filter(u => !newIds.has(u.sceneId));
+        const added = users.filter(u => !prevIds.has(u.sceneId));
+        
+        if (removed.length > 0) {
+          console.log('👋 Users removed from map:', removed.map(u => ({ name: u.name, sceneId: u.sceneId })));
+        }
+        if (added.length > 0) {
+          console.log('👋 Users added to map:', added.map(u => ({ name: u.name, sceneId: u.sceneId })));
+        }
+        
+        return users;
+      });
     } catch (error) {
       console.error('❌ Failed to fetch nearby scenes:', error);
     }
