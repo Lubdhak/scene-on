@@ -2,12 +2,10 @@ package handlers
 
 import (
 	"context"
-	"crypto/rand"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
-	"math/big"
 	"net/http"
 	"os"
 	"scene-on/backend/config"
