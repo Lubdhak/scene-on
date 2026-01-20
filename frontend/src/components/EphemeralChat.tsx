@@ -10,7 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 import { soundManager } from '@/utils/soundManager';
 
 const EphemeralChat = () => {
-  const { activeChatId, setActiveChatId, chatRequests, activeSessions, setActiveSessions, currentSceneId, setShowInbox } = useApp();
+  const { activeChatId, setActiveChatId, chatRequests, activeSessions, setActiveSessions, currentSceneId, setShowInbox, setUnreadSessionIds } = useApp();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [timeLeft, setTimeLeft] = useState<number>(0);
@@ -72,6 +72,12 @@ const EphemeralChat = () => {
     // Subscribe to chat expiration
     const unsubscribeExpired = subscribe('chat.expired', (data) => {
       if (data.request_id === activeChatId) {
+        console.log('⏰ Chat expired via WebSocket in EphemeralChat:', data.request_id);
+        
+        // Remove from active sessions and unread notifications
+        setActiveSessions(prev => prev.filter(s => s.request_id !== data.request_id));
+        setUnreadSessionIds(prev => prev.filter(id => id !== data.request_id));
+        
         toast({
           variant: 'destructive',
           title: 'Chat Expired',
@@ -137,6 +143,12 @@ const EphemeralChat = () => {
       setTimeLeft(remaining);
 
       if (remaining <= 0) {
+        console.log('⏰ Chat expired locally in EphemeralChat:', activeChatId);
+        
+        // Remove from active sessions and unread notifications
+        setActiveSessions(prev => prev.filter(s => s.request_id !== activeChatId));
+        setUnreadSessionIds(prev => prev.filter(id => id !== activeChatId));
+        
         toast({
           variant: 'destructive',
           title: 'Time\'s Up!',
@@ -147,7 +159,7 @@ const EphemeralChat = () => {
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [expiresAt]);
+  }, [expiresAt, activeChatId, setActiveSessions, setUnreadSessionIds]);
 
   const loadMessages = async () => {
     if (!activeChatId) return;
