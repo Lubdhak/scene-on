@@ -84,7 +84,12 @@ const MapMarker = memo(forwardRef<HTMLDivElement, {
       exit={{ scale: 0.5, opacity: 0, y: -20 }}
       transition={{ type: "spring", damping: 15, stiffness: 100 }}
       layout
-      className="absolute pointer-events-auto cursor-pointer group"
+      drag
+      dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
+      dragElastic={0.3}
+      dragTransition={{ bounceStiffness: 600, bounceDamping: 20 }}
+      whileDrag={{ scale: 1.1, zIndex: 50, cursor: 'grabbing' }}
+      className="absolute pointer-events-auto cursor-grab group"
       style={{
         left: `${25 + (index % 3) * 20 + (Math.sin(index) * 5)}%`,
         top: `${25 + Math.floor(index / 3) * 20 + (Math.cos(index) * 5)}%`,
