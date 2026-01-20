@@ -21,86 +21,72 @@ type CreatePersonaRequest struct {
 
 // GetOrCreatePersona gets or creates a persona for the user
 func GetOrCreatePersona(c *gin.Context) {
-	log.Println("📥 GetOrCreatePersona hit")
 	userID, _ := middleware.GetUserID(c)
 
 	var req CreatePersonaRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("❌ Failed to bind persona request: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	log.Printf("👤 Persona request for name: %s (UserID: %v)", req.Name, userID)
 
-	// OPTIMIZED: Single query to check user existence, name uniqueness, and get existing persona
-	// This reduces 3 database round trips to just 1
+	// Optimized: Single CTE query to validate user, check name uniqueness, and get existing persona
 	var (
-		userExists   bool
-		nameTaken    bool
-		personaID    sql.NullString
-		personaName  sql.NullString
-		avatarURL    sql.NullString
-		description  sql.NullString
-		stats        sql.NullString
-		isActive     sql.NullBool
-		createdAt    sql.NullTime
-		updatedAt    sql.NullTime
+		userExists  bool
+		nameTaken   bool
+		personaID   sql.NullString
+		avatarURL   sql.NullString
+		description sql.NullString
+		stats       sql.NullString
+		createdAt   sql.NullTime
 	)
 
 	query := `
-		WITH user_check AS (
-			SELECT EXISTS(SELECT 1 FROM users WHERE id = $1) AS exists
-		),
-		name_check AS (
-			SELECT EXISTS(SELECT 1 FROM personas WHERE LOWER(name) = LOWER($2) AND id != $1) AS taken
-		),
-		existing_persona AS (
-			SELECT id, user_id, name, avatar_url, description, stats, is_active, created_at, updated_at
-			FROM personas
-			WHERE id = $1
-			LIMIT 1
+		WITH checks AS (
+			SELECT 
+				EXISTS(SELECT 1 FROM users WHERE id = $1) AS user_exists,
+				EXISTS(SELECT 1 FROM personas WHERE LOWER(name) = LOWER($2) AND user_id != $1) AS name_taken
 		)
 		SELECT 
-			(SELECT exists FROM user_check) AS user_exists,
-			(SELECT taken FROM name_check) AS name_taken,
-			ep.id, ep.name, ep.avatar_url, ep.description, ep.stats, ep.is_active, ep.created_at, ep.updated_at
-		FROM user_check, name_check
-		LEFT JOIN existing_persona ep ON TRUE
+			c.user_exists,
+			c.name_taken,
+			p.id,
+			p.avatar_url,
+			p.description,
+			p.stats,
+			p.created_at
+		FROM checks c
+		LEFT JOIN personas p ON p.id = $1
 	`
 
 	err := config.DB.QueryRow(query, userID, req.Name).Scan(
-		&userExists, &nameTaken,
-		&personaID, &personaName, &avatarURL, &description, &stats, &isActive, &createdAt, &updatedAt,
+		&userExists, &nameTaken, &personaID, &avatarURL, &description, &stats, &createdAt,
 	)
 
 	if err != nil {
-		log.Printf("❌ Failed to query persona data: %v", err)
+		log.Printf("Failed to query persona data: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
 		return
 	}
 
-	// Check user existence
 	if !userExists {
-		log.Printf("⚠️ UserID %v from token does not exist in database! (Stale token?)", userID)
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "User record not found. Please log out and log in again to refresh your account.",
+			"error": "User not found. Please log in again.",
 			"code":  "USER_NOT_FOUND",
 		})
 		return
 	}
 
-	// Check name uniqueness
 	if nameTaken {
 		c.JSON(http.StatusConflict, gin.H{
-			"error": "Persona name '" + req.Name + "' is already taken. Please choose another.",
+			"error": "Name already taken",
 			"code":  "NAME_TAKEN",
 		})
 		return
 	}
 
+	now := time.Now()
 	var persona models.Persona
 
-	// Check if persona exists
 	if personaID.Valid {
 		// Update existing persona
 		persona = models.Persona{
@@ -112,33 +98,27 @@ func GetOrCreatePersona(c *gin.Context) {
 			Stats:       models.JSONB{},
 			IsActive:    true,
 			CreatedAt:   createdAt.Time,
-			UpdatedAt:   time.Now(),
+			UpdatedAt:   now,
 		}
 
-		// Parse stats JSON if present
 		if stats.Valid && stats.String != "" {
 			var statsMap models.JSONB
-			if err := json.Unmarshal([]byte(stats.String), &statsMap); err != nil {
-				log.Printf("⚠️ Failed to parse stats JSON: %v", err)
-			} else {
+			if err := json.Unmarshal([]byte(stats.String), &statsMap); err == nil {
 				persona.Stats = statsMap
 			}
 		}
 
 		_, err = config.DB.Exec(
 			`UPDATE personas SET name = $1, avatar_url = $2, description = $3, updated_at = $4 WHERE id = $5`,
-			persona.Name, persona.AvatarURL, persona.Description, persona.UpdatedAt, persona.ID,
+			persona.Name, persona.AvatarURL, persona.Description, now, persona.ID,
 		)
-
 		if err != nil {
-			log.Printf("❌ Failed to update persona: %v", err)
+			log.Printf("Failed to update persona: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update persona"})
 			return
 		}
-
-		log.Printf("✓ Updated persona %s for user %s", persona.Name, userID)
 	} else {
-		// Create new persona with ID = userID
+		// Create new persona
 		persona = models.Persona{
 			ID:          userID,
 			UserID:      userID,
@@ -147,8 +127,8 @@ func GetOrCreatePersona(c *gin.Context) {
 			Description: req.Description,
 			Stats:       models.JSONB{},
 			IsActive:    true,
-			CreatedAt:   time.Now(),
-			UpdatedAt:   time.Now(),
+			CreatedAt:   now,
+			UpdatedAt:   now,
 		}
 
 		_, err = config.DB.Exec(
@@ -157,17 +137,13 @@ func GetOrCreatePersona(c *gin.Context) {
 			persona.ID, persona.UserID, persona.Name, persona.AvatarURL, persona.Description,
 			persona.Stats, persona.IsActive, persona.CreatedAt, persona.UpdatedAt,
 		)
-
 		if err != nil {
-			log.Printf("❌ Failed to create persona: %v", err)
+			log.Printf("Failed to create persona: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create persona"})
 			return
 		}
-
-		log.Printf("✓ Created persona %s for user %s", persona.Name, userID)
 	}
 
-	log.Printf("📤 Returning persona: %+v", persona)
 	c.JSON(http.StatusOK, persona)
 }
 
@@ -182,7 +158,6 @@ func GetUserPersonas(c *gin.Context) {
 		 ORDER BY created_at DESC`,
 		userID,
 	)
-
 	if err != nil {
 		log.Printf("Failed to get personas: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get personas"})
@@ -190,7 +165,7 @@ func GetUserPersonas(c *gin.Context) {
 	}
 	defer rows.Close()
 
-	var personas []models.Persona
+	personas := make([]models.Persona, 0, 5)
 	for rows.Next() {
 		var p models.Persona
 		err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.AvatarURL, &p.Description, &p.Stats,
@@ -200,10 +175,6 @@ func GetUserPersonas(c *gin.Context) {
 			continue
 		}
 		personas = append(personas, p)
-	}
-
-	if personas == nil {
-		personas = []models.Persona{}
 	}
 
 	c.JSON(http.StatusOK, personas)
