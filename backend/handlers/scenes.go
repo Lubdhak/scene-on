@@ -165,7 +165,48 @@ func StopScene(wsHub *websocket.Hub) gin.HandlerFunc {
 			return
 		}
 
-		// Use CTE to perform all cleanup operations atomically in single query
+// First, get all affected chat sessions to notify both parties
+	rows, err := config.DB.Query(`
+		SELECT id, from_scene_id, to_scene_id
+		FROM chat_requests
+		WHERE (from_scene_id = $1 OR to_scene_id = $1)
+		  AND status = 'accepted'
+	`, sceneID)
+	
+	if err != nil {
+		log.Printf("Failed to query affected chats for scene %s: %v", sceneID, err)
+		// Continue with cleanup even if query fails
+	} else {
+		defer rows.Close()
+		
+		// Broadcast chat.session.ended for each affected session
+		for rows.Next() {
+			var requestID, fromSceneID, toSceneID uuid.UUID
+			if err := rows.Scan(&requestID, &fromSceneID, &toSceneID); err == nil {
+				log.Printf("📢 Broadcasting chat.session.ended for request %s (scene stopped)", requestID)
+				
+				// Notify both parties
+				msg := websocket.Message{
+					Type: "chat.session.ended",
+					Data: map[string]interface{}{
+						"request_id": requestID.String(),
+						"reason":     "scene_ended",
+					},
+				}
+				
+				wsHub.Targeted <- websocket.TargetedMessage{
+					TargetSceneID: fromSceneID,
+					Message:       msg,
+				}
+				wsHub.Targeted <- websocket.TargetedMessage{
+					TargetSceneID: toSceneID,
+					Message:       msg,
+				}
+			}
+		}
+	}
+
+	// Use CTE to perform all cleanup operations atomically in single query
 		_, err = config.DB.Exec(`
 			WITH deleted_yells AS (
 				DELETE FROM yells WHERE scene_id = $1

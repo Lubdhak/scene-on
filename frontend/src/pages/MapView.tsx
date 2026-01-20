@@ -32,6 +32,7 @@ const MapView = () => {
     setCurrentSceneId,
     setSentChatRequests,
     activeChatId,
+    setActiveChatId,
     authState,
     currentSceneId,
     showInbox,
@@ -181,9 +182,30 @@ const MapView = () => {
 
     const unsubscribeEnded = subscribe('chat.session.ended', (data) => {
       if (data && data.request_id) {
-        setChatRequests(prev => prev.filter(r => r.id !== data.request_id));
-        setActiveSessions(prev => prev.filter(s => s.request_id !== data.request_id));
-        setUnreadSessionIds(prev => prev.filter(id => id !== data.request_id));
+        const requestId = data.request_id;
+        
+        // Check if this was the active chat
+        const wasActiveChat = activeChatIdRef.current === requestId;
+        
+        // Clean up all state
+        setChatRequests(prev => prev.filter(r => r.id !== requestId));
+        setActiveSessions(prev => prev.filter(s => s.request_id !== requestId));
+        setUnreadSessionIds(prev => prev.filter(id => id !== requestId));
+        
+        // If this was the active chat, close it and notify
+        if (wasActiveChat) {
+          setActiveChatId(null);
+          const reason = data.reason || 'ended';
+          const message = reason === 'scene_ended' 
+            ? 'The other user has left the scene.'
+            : 'The chat session has ended.';
+          
+          toast({
+            title: 'Chat Ended',
+            description: message,
+            duration: 3000,
+          });
+        }
       }
     });
 

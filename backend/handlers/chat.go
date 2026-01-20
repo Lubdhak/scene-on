@@ -948,6 +948,8 @@ func GetActiveChatSessions(c *gin.Context) {
 		) cm ON TRUE
 		WHERE cr.status = 'accepted'
 		  AND cr.expires_at > NOW()
+		  AND other_scene.is_active = true
+		  AND other_scene.expires_at > NOW()
 		ORDER BY COALESCE(cm.created_at, cr.accepted_at) DESC`,
 		userID,
 	)
