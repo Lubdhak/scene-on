@@ -52,35 +52,56 @@ func SendChatRequest(wsHub *websocket.Hub) gin.HandlerFunc {
 			return
 		}
 
-		// Get user's active scene with persona info in one query
+		// Get user's active scene with persona info and validate target scene in one query
 		var fromSceneID uuid.UUID
 		var fromPersonaName, fromPersonaAvatar, fromPersonaDescription string
+		var targetExists bool
+		var existingRequestID sql.NullString
 		err = config.DB.QueryRow(
-			`SELECT s.id, p.name, p.avatar_url, p.description FROM scenes s
-			 JOIN personas p ON s.persona_id = p.id
-			 WHERE p.user_id = $1 AND s.is_active = true AND s.expires_at > NOW()
-			 ORDER BY s.started_at DESC LIMIT 1`,
-			userID,
-		).Scan(&fromSceneID, &fromPersonaName, &fromPersonaAvatar, &fromPersonaDescription)
+			`WITH user_scene AS (
+				SELECT s.id, p.name, p.avatar_url, p.description 
+				FROM scenes s
+				JOIN personas p ON s.persona_id = p.id
+				WHERE p.user_id = $1 AND s.is_active = true AND s.expires_at > NOW()
+				ORDER BY s.started_at DESC 
+				LIMIT 1
+			),
+			target_check AS (
+				SELECT EXISTS(
+					SELECT 1 FROM scenes 
+					WHERE id = $2 AND is_active = true AND expires_at > NOW()
+				) as exists
+			),
+			existing_request AS (
+				SELECT id::text FROM chat_requests
+				WHERE ((from_scene_id = (SELECT id FROM user_scene) AND to_scene_id = $2) 
+					OR (from_scene_id = $2 AND to_scene_id = (SELECT id FROM user_scene)))
+				AND status IN ('pending', 'accepted')
+				LIMIT 1
+			)
+			SELECT 
+				us.id, us.name, us.avatar_url, us.description,
+				tc.exists,
+				er.id
+			FROM user_scene us
+			CROSS JOIN target_check tc
+			LEFT JOIN existing_request er ON TRUE`,
+			userID, toSceneID,
+		).Scan(&fromSceneID, &fromPersonaName, &fromPersonaAvatar, &fromPersonaDescription, 
+			&targetExists, &existingRequestID)
 
 		if err == sql.ErrNoRows {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "No active scene found. Start a scene first."})
 			return
 		}
 		if err != nil {
-			log.Printf("Failed to get active scene: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get active scene"})
+			log.Printf("Failed to get scene info: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to validate request"})
 			return
 		}
 
-		// Verify target scene exists and is active
-		var targetExists bool
-		err = config.DB.QueryRow(
-			`SELECT EXISTS(SELECT 1 FROM scenes WHERE id = $1 AND is_active = true AND expires_at > NOW())`,
-			toSceneID,
-		).Scan(&targetExists)
-
-		if err != nil || !targetExists {
+		// Validate target scene exists
+		if !targetExists {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Target scene not found or inactive"})
 			return
 		}
@@ -91,17 +112,8 @@ func SendChatRequest(wsHub *websocket.Hub) gin.HandlerFunc {
 			return
 		}
 
-		// Check if there's already a pending or accepted request between these scenes
-		var existingID uuid.UUID
-		err = config.DB.QueryRow(
-			`SELECT id FROM chat_requests 
-			 WHERE ((from_scene_id = $1 AND to_scene_id = $2) OR (from_scene_id = $2 AND to_scene_id = $1))
-			 AND status IN ('pending', 'accepted')
-			 LIMIT 1`,
-			fromSceneID, toSceneID,
-		).Scan(&existingID)
-
-		if err == nil {
+		// Check if existing request was found
+		if existingRequestID.Valid {
 			c.JSON(http.StatusConflict, gin.H{"error": "Chat request already exists between these scenes"})
 			return
 		}
@@ -129,24 +141,21 @@ func SendChatRequest(wsHub *websocket.Hub) gin.HandlerFunc {
 			return
 		}
 
-		// Use persona info already fetched in the first query
-		if true {
-			// Send Targeted WebSocket notification to recipient scene
-			wsHub.Targeted <- websocket.TargetedMessage{
-				TargetSceneID: toSceneID,
-				Message: websocket.Message{
-					Type: "chat.request.received",
-					Data: map[string]interface{}{
-						"id":                       chatRequest.ID.String(),
-						"from_scene_id":             chatRequest.FromSceneID.String(),
-						"from_persona_name":        fromPersonaName,
-						"from_persona_avatar":      fromPersonaAvatar,
-						"from_persona_description": fromPersonaDescription,
-						"message":                  chatRequest.Message,
-						"created_at":               chatRequest.CreatedAt,
-					},
+		// Send Targeted WebSocket notification to recipient scene
+		wsHub.Targeted <- websocket.TargetedMessage{
+			TargetSceneID: toSceneID,
+			Message: websocket.Message{
+				Type: "chat.request.received",
+				Data: map[string]interface{}{
+					"id":                       chatRequest.ID.String(),
+					"from_scene_id":             chatRequest.FromSceneID.String(),
+					"from_persona_name":        fromPersonaName,
+					"from_persona_avatar":      fromPersonaAvatar,
+					"from_persona_description": fromPersonaDescription,
+					"message":                  chatRequest.Message,
+					"created_at":               chatRequest.CreatedAt,
 				},
-			}
+			},
 		}
 
 		c.JSON(http.StatusCreated, chatRequest)
