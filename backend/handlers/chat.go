@@ -825,7 +825,7 @@ func GetActiveChatSessions(c *gin.Context) {
 		ORDER BY COALESCE(cm.created_at, cr.accepted_at) DESC`,
 		userID,
 	)
-== sql.ErrNoRows || err != nil {
+	if err == sql.ErrNoRows || err != nil {
 		if err != nil && err != sql.ErrNoRows {
 			log.Printf("Failed to get active sessions: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get active sessions"})
@@ -839,7 +839,6 @@ func GetActiveChatSessions(c *gin.Context) {
 
 	// Pre-allocate slice with estimated capacity to reduce allocations
 	sessions := make([]map[string]interface{}, 0, 10)
-	var sessions []map[string]interface{}
 	for rows.Next() {
 		var id, fromSceneID, toSceneID uuid.UUID
 		var expiresAt time.Time
