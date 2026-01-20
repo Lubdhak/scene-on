@@ -15,6 +15,7 @@ interface ChatInboxProps {
 const ActiveSessionItem = ({ session, index, isUnread, currentSceneId, onClick }: { session: ChatSession; index: number; isUnread: boolean; currentSceneId: string | null; onClick: () => void }) => {
   const [timeLeft, setTimeLeft] = useState<number>(0);
   const totalDuration = 5 * 60; // 5 minutes in seconds
+  const { setActiveSessions, setUnreadSessionIds } = useApp();
 
   useEffect(() => {
     const calculateTime = () => {
@@ -22,12 +23,19 @@ const ActiveSessionItem = ({ session, index, isUnread, currentSceneId, onClick }
       const now = new Date().getTime();
       const diff = Math.max(0, Math.floor((expiry - now) / 1000));
       setTimeLeft(diff);
+      
+      // Auto-remove when expired
+      if (diff === 0) {
+        console.log('⏰ Session expired locally:', session.request_id);
+        setActiveSessions(prev => prev.filter(s => s.request_id !== session.request_id));
+        setUnreadSessionIds(prev => prev.filter(id => id !== session.request_id));
+      }
     };
 
     calculateTime();
     const interval = setInterval(calculateTime, 1000);
     return () => clearInterval(interval);
-  }, [session.expires_at]);
+  }, [session.expires_at, session.request_id, setActiveSessions, setUnreadSessionIds]);
 
   const progress = (timeLeft / totalDuration) * 100;
   const minutes = Math.floor(timeLeft / 60);
@@ -156,9 +164,20 @@ const ChatInbox = ({ onClose }: ChatInboxProps) => {
       loadAll();
     });
 
+    const unsubscribeExpired = subscribe('chat.expired', (data) => {
+      console.log('⏰ Inbox: Chat expired via WS', data.request_id);
+      
+      // Remove expired session from active sessions
+      setActiveSessions(prev => prev.filter(s => s.request_id !== data.request_id));
+      
+      // Remove unread notification for expired session
+      setUnreadSessionIds(prev => prev.filter(id => id !== data.request_id));
+    });
+
     return () => {
       unsubscribeReceived();
       unsubscribeAccepted();
+      unsubscribeExpired();
     };
   }, [subscribe]);
 
