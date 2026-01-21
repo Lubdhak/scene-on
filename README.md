@@ -18,7 +18,7 @@ Think of it as a way to:
   https://console.neon.tech/app/projects/snowy-fire-15936277?database=scene-on
 
 - **Frontend (Vercel)**  
-  https://vercel.com/lubdhaks-projects/scene-on-vercel
+  https://vercel.com/lubdhaks-projects-91deb0ea
 
 - **Backend (Render)**  
   https://dashboard.render.com/web/srv-d5jv8pvfte5s738umss0
